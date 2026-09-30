@@ -1,80 +1,129 @@
-const mysql = require('mysql2/promise');
+const fs = require('fs');
+const path = require('path');
 const bcrypt = require('bcryptjs');
 const { v4: uuidv4 } = require('uuid');
+const initSqlJs = require('sql.js');
 
-let pool = null;
+const DATA_DIR = path.join(__dirname, '..', 'data');
+const DB_FILE = path.join(DATA_DIR, 'botapi.db');
+
+let SQL = null;
+let db = null;
+let saveTimer = null;
+
+const saveSync = () => {
+  if (!db) return;
+  try {
+    fs.writeFileSync(DB_FILE, Buffer.from(db.export()));
+  } catch (error) {
+    console.error('Error guardando la base de datos:', error);
+  }
+};
+
+const scheduleSave = () => {
+  if (saveTimer) clearTimeout(saveTimer);
+  saveTimer = setTimeout(saveSync, 1000);
+};
 
 const connect = async () => {
-  pool = mysql.createPool({
-    host: process.env.DB_HOST || 'localhost',
-    port: parseInt(process.env.DB_PORT) || 3306,
-    user: process.env.DB_USER,
-    password: process.env.DB_PASSWORD,
-    database: process.env.DB_NAME,
-    waitForConnections: true,
-    connectionLimit: 10,
-    queueLimit: 0
-  });
+  if (!fs.existsSync(DATA_DIR)) {
+    fs.mkdirSync(DATA_DIR, { recursive: true });
+  }
+  
+  SQL = await initSqlJs();
+  
+  if (fs.existsSync(DB_FILE)) {
+    db = new SQL.Database(fs.readFileSync(DB_FILE));
+    console.log('📂 Base de datos existente cargada desde disco');
+  } else {
+    db = new SQL.Database();
+    console.log('📂 Base de datos nueva creada');
+  }
+  
+  db.run('PRAGMA foreign_keys = ON;');
+  
+  process.on('exit', saveSync);
+  process.on('SIGINT', () => { saveSync(); process.exit(0); });
+  process.on('SIGTERM', () => { saveSync(); process.exit(0); });
+};
 
-  const connection = await pool.getConnection();
-  await connection.ping();
-  connection.release();
+const normalizeParams = (params) => {
+  return (params || []).map(p => {
+    if (p === undefined) return null;
+    if (p instanceof Date) return p.toISOString();
+    if (typeof p === 'boolean') return p ? 1 : 0;
+    return p;
+  });
 };
 
 const query = async (sql, params = []) => {
-  const [rows] = await pool.execute(sql, params);
-  return rows;
+  const stmt = db.prepare(sql);
+  try {
+    stmt.bind(normalizeParams(params));
+    const rows = [];
+    while (stmt.step()) {
+      rows.push(stmt.getAsObject());
+    }
+    return rows;
+  } finally {
+    stmt.free();
+    if (/^\s*(INSERT|UPDATE|DELETE|CREATE|DROP|ALTER)/i.test(sql)) {
+      scheduleSave();
+    }
+  }
 };
 
 const createTables = async () => {
   const tables = [
     `CREATE TABLE IF NOT EXISTS users (
-      id VARCHAR(36) PRIMARY KEY,
-      username VARCHAR(50) UNIQUE NOT NULL,
-      email VARCHAR(100) UNIQUE NOT NULL,
-      password VARCHAR(255) NOT NULL,
-      coins DECIMAL(10,2) DEFAULT 0.00,
-      role ENUM('user', 'admin') DEFAULT 'user',
-      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      id TEXT PRIMARY KEY,
+      username TEXT UNIQUE NOT NULL,
+      email TEXT UNIQUE NOT NULL,
+      password TEXT NOT NULL,
+      coins REAL DEFAULT 0,
+      role TEXT DEFAULT 'user' CHECK(role IN ('user','admin')),
+      created_at TEXT DEFAULT CURRENT_TIMESTAMP
     )`,
 
     `CREATE TABLE IF NOT EXISTS servers (
-      id VARCHAR(36) PRIMARY KEY,
-      user_id VARCHAR(36) NOT NULL,
-      name VARCHAR(100) NOT NULL,
-      plan ENUM('basico', 'estandar', 'pro', 'ultra') NOT NULL,
-      repo_url VARCHAR(500),
-      node_version VARCHAR(10) DEFAULT '20',
-      status ENUM('stopped', 'running', 'installing', 'expired') DEFAULT 'stopped',
-      coins_cost DECIMAL(10,2) NOT NULL,
-      expires_at DATETIME NOT NULL,
-      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      id TEXT PRIMARY KEY,
+      user_id TEXT NOT NULL,
+      name TEXT NOT NULL,
+      plan TEXT NOT NULL CHECK(plan IN ('basico','estandar','pro','ultra')),
+      repo_url TEXT,
+      node_version TEXT DEFAULT '20',
+      status TEXT DEFAULT 'stopped' CHECK(status IN ('stopped','running','installing','expired')),
+      coins_cost REAL NOT NULL,
+      expires_at TEXT NOT NULL,
+      created_at TEXT DEFAULT CURRENT_TIMESTAMP,
       FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
     )`,
 
     `CREATE TABLE IF NOT EXISTS transactions (
-      id VARCHAR(36) PRIMARY KEY,
-      user_id VARCHAR(36) NOT NULL,
-      coins DECIMAL(10,2) NOT NULL,
-      amount_usd DECIMAL(10,2) NOT NULL,
-      paypal_order_id VARCHAR(100),
-      status ENUM('pending', 'completed', 'failed') DEFAULT 'pending',
-      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      id TEXT PRIMARY KEY,
+      user_id TEXT NOT NULL,
+      coins REAL NOT NULL,
+      amount_usd REAL NOT NULL,
+      paypal_order_id TEXT,
+      status TEXT DEFAULT 'pending' CHECK(status IN ('pending','completed','failed')),
+      created_at TEXT DEFAULT CURRENT_TIMESTAMP,
       FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
     )`,
 
     `CREATE TABLE IF NOT EXISTS server_logs (
-      id VARCHAR(36) PRIMARY KEY,
-      server_id VARCHAR(36) NOT NULL,
+      id TEXT PRIMARY KEY,
+      server_id TEXT NOT NULL,
       log TEXT,
-      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      created_at TEXT DEFAULT CURRENT_TIMESTAMP,
       FOREIGN KEY (server_id) REFERENCES servers(id) ON DELETE CASCADE
     )`
   ];
 
   for (const table of tables) {
-    await query(table);
+    db.run(table);
   }
+  
+  scheduleSave();
 };
 
 const createInitialAdmin = async () => {
@@ -101,5 +150,6 @@ module.exports = {
   query,
   createTables,
   createInitialAdmin,
-  getPool: () => pool
+  getPool: () => db,
+  save: saveSync
 };
