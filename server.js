@@ -1,9 +1,12 @@
 require('dotenv').config();
 const express = require('express');
 const http = require('http');
+const https = require('https');
 const { Server } = require('socket.io');
 const path = require('path');
+const fs = require('fs');
 const cron = require('node-cron');
+const selfsigned = require('selfsigned');
 
 const db = require('./db/database');
 const authRoutes = require('./routes/auth');
@@ -14,13 +17,51 @@ const botManager = require('./services/botManager');
 const paypalService = require('./services/paypal');
 
 const app = express();
-const server = http.createServer(app);
-const io = new Server(server, {
-  cors: {
-    origin: "*",
-    methods: ["GET", "POST"]
+
+// Servidor HTTP (redirige a HTTPS)
+const httpServer = http.createServer(app);
+
+// Servidor HTTPS con certificado autofirmado
+const CERT_DIR = path.join(__dirname, 'data', 'certs');
+const CERT_PATH = path.join(CERT_DIR, 'cert.pem');
+const KEY_PATH = path.join(CERT_DIR, 'key.pem');
+
+let httpsServer = null;
+
+const setupHttps = async () => {
+  try {
+    if (!fs.existsSync(CERT_DIR)) {
+      fs.mkdirSync(CERT_DIR, { recursive: true });
+    }
+
+    let cert, key;
+
+    if (fs.existsSync(CERT_PATH) && fs.existsSync(KEY_PATH)) {
+      cert = fs.readFileSync(CERT_PATH);
+      key = fs.readFileSync(KEY_PATH);
+      console.log('🔐 Certificado SSL existente cargado');
+    } else {
+      const attrs = [{ name: 'commonName', value: 'BOT-API-Hosting' }];
+      const pems = selfsigned.generate(attrs, {
+        days: 365,
+        keySize: 2048,
+        algorithm: 'sha256'
+      });
+      
+      fs.writeFileSync(CERT_PATH, pems.cert);
+      fs.writeFileSync(KEY_PATH, pems.private);
+      cert = pems.cert;
+      key = pems.private;
+      console.log('🔐 Certificado SSL autofirmado generado');
+    }
+
+    httpsServer = https.createServer({ cert, key }, app);
+    return true;
+  } catch (error) {
+    console.error('⚠️ Error configurando HTTPS, usando solo HTTP:', error.message);
+    return false;
   }
-});
+};
 
 // Middleware
 app.use(express.json());
@@ -34,24 +75,34 @@ app.use('/api/servers', serversRoutes);
 app.use('/api/admin', adminRoutes);
 
 // Socket.IO para consolas en vivo
-io.on('connection', (socket) => {
-  console.log('Usuario conectado:', socket.id);
-  
-  socket.on('join-console', (serverId) => {
-    socket.join(`console-${serverId}`);
-  });
-  
-  socket.on('send-command', (data) => {
-    botManager.sendCommand(data.serverId, data.command);
-  });
-  
-  socket.on('disconnect', () => {
-    console.log('Usuario desconectado:', socket.id);
-  });
-});
+let io = null;
 
-// Hacer io accesible desde rutas
-app.set('io', io);
+const setupSocketIO = (server) => {
+  io = new Server(server, {
+    cors: {
+      origin: "*",
+      methods: ["GET", "POST"]
+    }
+  });
+
+  io.on('connection', (socket) => {
+    console.log('Usuario conectado:', socket.id);
+    
+    socket.on('join-console', (serverId) => {
+      socket.join(`console-${serverId}`);
+    });
+    
+    socket.on('send-command', (data) => {
+      botManager.sendCommand(data.serverId, data.command);
+    });
+    
+    socket.on('disconnect', () => {
+      console.log('Usuario desconectado:', socket.id);
+    });
+  });
+
+  app.set('io', io);
+};
 
 // Cron job: revisar servers vencidos cada hora
 cron.schedule('0 * * * *', async () => {
@@ -69,28 +120,44 @@ const PORT = process.env.SERVER_PORT || process.env.PORT || 3000;
 
 async function startServer() {
   try {
-    // Conectar a la base de datos
     await db.connect();
     console.log('✅ Base de datos conectada');
     
-    // Crear tablas si no existen
     await db.createTables();
     console.log('✅ Tablas creadas/verificadas');
     
-    // Crear admin inicial
     await db.createInitialAdmin();
     console.log('✅ Admin inicial verificado');
     
-    // Iniciar botManager
     await botManager.initialize();
     console.log('✅ Bot Manager inicializado');
+
+    // Configurar HTTPS
+    const httpsReady = await setupHttps();
+
+    if (httpsReady && httpsServer) {
+      setupSocketIO(httpsServer);
+      setupSocketIO(httpServer);
+
+      httpsServer.listen(PORT, '0.0.0.0', () => {
+        console.log(`🚀 BOT-API-Hosting HTTPS corriendo en puerto ${PORT}`);
+      });
+
+      httpServer.listen(3001, '0.0.0.0', () => {
+        console.log(`🚀 BOT-API-Hosting HTTP corriendo en puerto 3001`);
+      });
+
+      console.log(`🌐 URL: https://localhost:${PORT}`);
+    } else {
+      setupSocketIO(httpServer);
+      
+      httpServer.listen(PORT, '0.0.0.0', () => {
+        console.log(`🚀 BOT-API-Hosting HTTP corriendo en puerto ${PORT}`);
+        console.log(`🌐 URL: http://localhost:${PORT}`);
+      });
+    }
     
-    // Iniciar servidor
-    server.listen(PORT, () => {
-      console.log(`🚀 BOT-API-HOSTING corriendo en puerto ${PORT}`);
-      console.log(`🌐 URL: http://localhost:${PORT}`);
-      console.log(`👤 Admin: ${process.env.ADMIN_EMAIL}`);
-    });
+    console.log(`👤 Admin: ${process.env.ADMIN_EMAIL}`);
   } catch (error) {
     console.error('❌ Error al iniciar servidor:', error);
     process.exit(1);
