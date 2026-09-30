@@ -17,183 +17,167 @@ const initialize = async () => {
 };
 
 const createServerDirectory = async (serverId) => {
-  try {
-    const serverDir = path.join(BOTS_DIR, serverId);
-    await fs.mkdir(serverDir, { recursive: true });
-    return serverDir;
-  } catch (error) {
-    throw new Error('Error al crear directorio del servidor');
-  }
+  const serverDir = path.join(BOTS_DIR, serverId);
+  await fs.mkdir(serverDir, { recursive: true });
+  return serverDir;
 };
 
 const deleteServerDirectory = async (serverId) => {
   try {
-    const serverDir = path.join(BOTS_DIR, serverId);
-    await fs.rm(serverDir, { recursive: true, force: true });
+    await fs.rm(path.join(BOTS_DIR, serverId), { recursive: true, force: true });
   } catch (error) {
     console.error('Error al eliminar directorio:', error);
   }
 };
 
-const isRunning = (serverId) => {
-  return runningProcesses.has(serverId);
+const isRunning = (serverId) => runningProcesses.has(serverId);
+
+const detectMainFile = async (serverDir) => {
+  try {
+    const pkg = JSON.parse(await fs.readFile(path.join(serverDir, 'package.json'), 'utf8'));
+    if (pkg.main && typeof pkg.main === 'string') {
+      try {
+        await fs.access(path.join(serverDir, pkg.main));
+        return pkg.main;
+      } catch {}
+    }
+  } catch {}
+  
+  const candidates = ['index.js', 'main.js', 'app.js', 'bot.js', 'server.js', 'src/index.js', 'src/main.js'];
+  for (const candidate of candidates) {
+    try {
+      await fs.access(path.join(serverDir, candidate));
+      return candidate;
+    } catch {}
+  }
+  return null;
 };
 
 const startServer = async (serverId, nodeVersion, io) => {
-  try {
-    if (isRunning(serverId)) {
-      throw new Error('El servidor ya está corriendo');
-    }
-    
-    const serverDir = path.join(BOTS_DIR, serverId);
-    
-    try {
-      await fs.access(serverDir);
-    } catch {
-      await fs.mkdir(serverDir, { recursive: true });
-    }
-    
-    const files = await fs.readdir(serverDir);
-    const hasPackageJson = files.includes('package.json');
-    
-    if (!hasPackageJson) {
-      const errorMsg = '❌ Error: No se encontró package.json. Configura el repositorio en Startup y haz Reinstall.';
-      await addLog(serverId, errorMsg);
-      if (io) io.to(`console-${serverId}`).emit('console-output', errorMsg);
-      throw new Error('package.json no encontrado');
-    }
-    
-    await addLog(serverId, `🚀 Iniciando servidor con Node ${nodeVersion || '20'}...`);
-    if (io) io.to(`console-${serverId}`).emit('console-output', `🚀 Iniciando servidor con Node ${nodeVersion || '20'}...`);
-    
-    const process = spawn('node', ['index.js'], {
-      cwd: serverDir,
-      env: { ...process.env },
-      shell: false
-    });
-    
-    runningProcesses.set(serverId, process);
-    
-    process.stdout.on('data', async (data) => {
-      const message = data.toString();
-      if (io) io.to(`console-${serverId}`).emit('console-output', message);
-      await addLog(serverId, message);
-    });
-    
-    process.stderr.on('data', async (data) => {
-      const message = data.toString();
-      if (io) io.to(`console-${serverId}`).emit('console-output', `❌ ${message}`);
-      await addLog(serverId, `ERROR: ${message}`);
-    });
-    
-    process.on('close', async (code) => {
-      runningProcesses.delete(serverId);
-      const message = `🛑 Servidor detenido con código: ${code}`;
-      if (io) io.to(`console-${serverId}`).emit('console-output', message);
-      await addLog(serverId, message);
-      await db.query('UPDATE servers SET status = ? WHERE id = ?', ['stopped', serverId]);
-    });
-    
-    process.on('error', async (error) => {
-      runningProcesses.delete(serverId);
-      const message = `❌ Error al iniciar: ${error.message}`;
-      if (io) io.to(`console-${serverId}`).emit('console-output', message);
-      await addLog(serverId, message);
-    });
-    
-    await addLog(serverId, '✅ Servidor iniciado correctamente');
-    if (io) io.to(`console-${serverId}`).emit('console-output', '✅ Servidor iniciado correctamente');
-    
-  } catch (error) {
-    throw error;
+  if (isRunning(serverId)) {
+    throw new Error('El servidor ya está corriendo');
   }
+  
+  const serverDir = path.join(BOTS_DIR, serverId);
+  
+  let files;
+  try {
+    files = await fs.readdir(serverDir);
+  } catch {
+    await fs.mkdir(serverDir, { recursive: true });
+    files = [];
+  }
+  
+  if (!files.includes('package.json')) {
+    const msg = '❌ Error: No se encontró package.json. Configura el repositorio en Startup y haz Reinstall.';
+    await addLog(serverId, msg);
+    if (io) io.to(`console-${serverId}`).emit('console-output', msg);
+    throw new Error('package.json no encontrado');
+  }
+  
+  const mainFile = await detectMainFile(serverDir);
+  
+  if (!mainFile) {
+    const msg = '❌ Error: No se encontró el archivo de entrada (index.js, main.js, app.js...). Revisa tu repositorio.';
+    await addLog(serverId, msg);
+    if (io) io.to(`console-${serverId}`).emit('console-output', msg);
+    throw new Error('Archivo de entrada no encontrado');
+  }
+  
+  const emit = async (message, type = '') => {
+    if (io) io.to(`console-${serverId}`).emit('console-output', message);
+    await addLog(serverId, message);
+  };
+  
+  await emit(`🚀 Iniciando servidor con Node ${nodeVersion || '20'}...`);
+  await emit(`📄 Archivo principal detectado: ${mainFile}`);
+  
+  const proc = spawn('node', [mainFile], {
+    cwd: serverDir,
+    env: { ...process.env },
+    shell: false
+  });
+  
+  runningProcesses.set(serverId, proc);
+  
+  proc.stdout.on('data', (data) => emit(data.toString()));
+  
+  proc.stderr.on('data', (data) => emit(`❌ ${data.toString()}`));
+  
+  proc.on('close', async (code, signal) => {
+    runningProcesses.delete(serverId);
+    await emit(`🛑 Servidor detenido (código: ${code}${signal ? `, señal: ${signal}` : ''})`);
+    if (code !== 0) {
+      await emit('💡 El bot cerró con error. Revisa los mensajes ❌ de arriba: puede faltar un token, una dependencia, o tu bot terminó su ejecución.');
+    }
+    await db.query('UPDATE servers SET status = ? WHERE id = ?', ['stopped', serverId]);
+  });
+  
+  proc.on('error', async (error) => {
+    runningProcesses.delete(serverId);
+    await emit(`❌ Error al iniciar el proceso: ${error.message}`);
+    await db.query('UPDATE servers SET status = ? WHERE id = ?', ['stopped', serverId]);
+  });
 };
 
 const stopServer = async (serverId) => {
-  try {
-    const process = runningProcesses.get(serverId);
-    
-    if (!process) {
-      throw new Error('El servidor no está corriendo');
+  const proc = runningProcesses.get(serverId);
+  if (!proc) throw new Error('El servidor no está corriendo');
+  
+  await addLog(serverId, '🛑 Deteniendo servidor...');
+  proc.kill('SIGTERM');
+  
+  setTimeout(() => {
+    if (runningProcesses.has(serverId)) {
+      runningProcesses.get(serverId).kill('SIGKILL');
+      runningProcesses.delete(serverId);
     }
-    
-    process.kill('SIGTERM');
-    
-    setTimeout(() => {
-      if (runningProcesses.has(serverId)) {
-        const proc = runningProcesses.get(serverId);
-        proc.kill('SIGKILL');
-        runningProcesses.delete(serverId);
-      }
-    }, 5000);
-    
-    await addLog(serverId, '🛑 Deteniendo servidor...');
-    
-  } catch (error) {
-    throw error;
-  }
+  }, 5000);
 };
 
 const restartServer = async (serverId, nodeVersion, io) => {
-  try {
-    if (isRunning(serverId)) {
-      await stopServer(serverId);
-      await new Promise(resolve => setTimeout(resolve, 2000));
-    }
-    
-    await startServer(serverId, nodeVersion, io);
-  } catch (error) {
-    throw error;
+  if (isRunning(serverId)) {
+    await stopServer(serverId);
+    await new Promise(resolve => setTimeout(resolve, 2000));
   }
+  await startServer(serverId, nodeVersion, io);
 };
 
 const sendCommand = (serverId, command) => {
-  const process = runningProcesses.get(serverId);
-  
-  if (!process) {
-    return { success: false, error: 'El servidor no está corriendo' };
-  }
-  
-  if (process.stdin.writable) {
-    process.stdin.write(command + '\n');
+  const proc = runningProcesses.get(serverId);
+  if (!proc) return { success: false, error: 'El servidor no está corriendo' };
+  if (proc.stdin.writable) {
+    proc.stdin.write(command + '\n');
     return { success: true };
   }
-  
   return { success: false, error: 'No se puede escribir en el proceso' };
 };
 
 const reinstall = async (serverId, repoUrl, nodeVersion, io) => {
+  const serverDir = path.join(BOTS_DIR, serverId);
+  const emit = async (message) => {
+    if (io) io.to(`console-${serverId}`).emit('console-output', message);
+    await addLog(serverId, message);
+  };
+  
   try {
-    const serverDir = path.join(BOTS_DIR, serverId);
-    
     await db.query('UPDATE servers SET status = ? WHERE id = ?', ['installing', serverId]);
-    
-    await addLog(serverId, '📦 Iniciando reinstalación...');
-    if (io) io.to(`console-${serverId}`).emit('console-output', '📦 Iniciando reinstalación...');
+    await emit('📦 Iniciando reinstalación...');
     
     await fs.rm(serverDir, { recursive: true, force: true });
     await fs.mkdir(serverDir, { recursive: true });
     
-    await addLog(serverId, `📥 Clonando repositorio: ${repoUrl}`);
-    if (io) io.to(`console-${serverId}`).emit('console-output', `📥 Clonando repositorio: ${repoUrl}`);
+    await emit(`📥 Clonando repositorio: ${repoUrl}`);
+    await runCommand('git', ['clone', '--depth', '1', repoUrl, serverDir], serverDir, io, serverId);
     
-    await runCommand('git', ['clone', repoUrl, serverDir], serverDir, io, serverId);
-    
-    await addLog(serverId, '📦 Instalando dependencias (npm install)...');
-    if (io) io.to(`console-${serverId}`).emit('console-output', '📦 Instalando dependencias (npm install)...');
-    
+    await emit('📦 Instalando dependencias (npm install)...');
     await runCommand('npm', ['install', '--production'], serverDir, io, serverId);
     
     await db.query('UPDATE servers SET status = ? WHERE id = ?', ['stopped', serverId]);
-    
-    await addLog(serverId, '✅ Reinstalación completada. Puedes iniciar tu servidor.');
-    if (io) io.to(`console-${serverId}`).emit('console-output', '✅ Reinstalación completada. Puedes iniciar tu servidor.');
-    
+    await emit('✅ Reinstalación completada. Puedes iniciar tu servidor.');
   } catch (error) {
     await db.query('UPDATE servers SET status = ? WHERE id = ?', ['stopped', serverId]);
-    const errorMsg = `❌ Error en reinstalación: ${error.message}`;
-    await addLog(serverId, errorMsg);
-    if (io) io.to(`console-${serverId}`).emit('console-output', errorMsg);
+    await emit(`❌ Error en reinstalación: ${error.message}`);
     throw error;
   }
 };
@@ -202,58 +186,37 @@ const runCommand = (command, args, cwd, io, serverId) => {
   return new Promise((resolve, reject) => {
     const proc = spawn(command, args, { cwd });
     
-    proc.stdout.on('data', async (data) => {
-      const message = data.toString();
-      if (io) io.to(`console-${serverId}`).emit('console-output', message);
-      await addLog(serverId, message);
+    proc.stdout.on('data', (data) => {
+      io.to(`console-${serverId}`).emit('console-output', data.toString());
+      addLog(serverId, data.toString());
     });
     
-    proc.stderr.on('data', async (data) => {
-      const message = data.toString();
-      if (io) io.to(`console-${serverId}`).emit('console-output', message);
-      await addLog(serverId, message);
+    proc.stderr.on('data', (data) => {
+      io.to(`console-${serverId}`).emit('console-output', data.toString());
+      addLog(serverId, data.toString());
     });
     
     proc.on('close', (code) => {
-      if (code === 0) {
-        resolve();
-      } else {
-        reject(new Error(`${command} terminó con código ${code}`));
-      }
+      if (code === 0) resolve();
+      else reject(new Error(`${command} terminó con código ${code}`));
     });
     
-    proc.on('error', (error) => {
-      reject(error);
-    });
+    proc.on('error', reject);
   });
 };
 
 const checkExpiredServers = async () => {
   try {
-    const now = new Date();
-    
     const expiredServers = await db.query(
       `SELECT * FROM servers WHERE expires_at < ? AND status != 'expired'`,
-      [now]
+      [new Date()]
     );
     
     for (const server of expiredServers) {
-      if (isRunning(server.id)) {
-        await stopServer(server.id);
-      }
-      
+      if (isRunning(server.id)) await stopServer(server.id);
       await deleteServerDirectory(server.id);
-      
-      await db.query(
-        "UPDATE servers SET status = 'expired' WHERE id = ?",
-        [server.id]
-      );
-      
+      await db.query("UPDATE servers SET status = 'expired' WHERE id = ?", [server.id]);
       console.log(`🗑️ Servidor expirado eliminado: ${server.id}`);
-    }
-    
-    if (expiredServers.length > 0) {
-      console.log(`🗑️ ${expiredServers.length} servidor(es) expirado(s) procesado(s)`);
     }
   } catch (error) {
     console.error('Error al verificar servers expirados:', error);
@@ -262,10 +225,9 @@ const checkExpiredServers = async () => {
 
 const addLog = async (serverId, message) => {
   try {
-    const logId = uuidv4();
     await db.query(
       'INSERT INTO server_logs (id, server_id, log) VALUES (?, ?, ?)',
-      [logId, serverId, message]
+      [uuidv4(), serverId, message]
     );
   } catch (error) {
     console.error('Error al guardar log:', error);
