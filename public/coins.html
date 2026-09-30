@@ -1,0 +1,121 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Coins | BOT-API-Hosting</title>
+  <link rel="stylesheet" href="/css/style.css">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+</head>
+<body class="dashboard-page">
+  <div class="dashboard-layout">
+    <aside class="sidebar">
+      <div class="sidebar-header">
+        <div class="nav-logo">
+          <span class="logo-icon">🤖</span>
+          <span class="logo-text">BOT-API<span class="accent">-Hosting</span></span>
+        </div>
+      </div>
+      <nav class="sidebar-nav">
+        <a href="/dashboard.html" class="nav-item">
+          <span class="nav-icon">📊</span> Dashboard
+        </a>
+        <a href="/coins.html" class="nav-item active">
+          <span class="nav-icon">💰</span> Coins
+        </a>
+        <a href="#" class="nav-item" id="profileLink">
+          <span class="nav-icon">👤</span> Perfil
+        </a>
+        <a href="#" class="nav-item" id="logoutBtn">
+          <span class="nav-icon">🚪</span> Cerrar Sesión
+        </a>
+      </nav>
+      <div class="sidebar-footer">
+        <p>Powered by <strong>Alex Aguilar Gutiérrez</strong></p>
+      </div>
+    </aside>
+
+    <main class="main-content">
+      <header class="top-bar">
+        <div class="top-bar-left">
+          <h1>Recargar Coins</h1>
+        </div>
+        <div class="top-bar-right">
+          <div class="user-coins">
+            <span class="coin-icon">🪙</span>
+            <span id="userCoins">0</span> coins
+          </div>
+          <div class="user-info">
+            <span id="userName">Usuario</span>
+          </div>
+        </div>
+      </header>
+
+      <div class="content-area">
+        <div class="balance-card">
+          <div class="balance-info">
+            <h2>Tu Balance</h2>
+            <div class="balance-amount">
+              <span class="coin-icon-large">🪙</span>
+              <span id="balanceAmount">0</span>
+              <span class="balance-label">coins</span>
+            </div>
+          </div>
+          <div class="balance-actions">
+            <a href="/dashboard.html" class="btn btn-outline">Usar Coins</a>
+          </div>
+        </div>
+
+        <div class="section-header">
+          <h2>Paquetes de Coins</h2>
+          <p class="section-subtitle">Selecciona un paquete y paga con PayPal</p>
+        </div>
+
+        <div class="packages-grid" id="packagesGrid">
+          <div class="loading-spinner">Cargando paquetes...</div>
+        </div>
+
+        <div class="section-header">
+          <h2>Historial de Transacciones</h2>
+        </div>
+
+        <div class="transactions-table-container">
+          <table class="transactions-table">
+            <thead>
+              <tr>
+                <th>Fecha</th>
+                <th>Coins</th>
+                <th>Monto USD</th>
+                <th>Estado</th>
+                <th>ID PayPal</th>
+              </tr>
+            </thead>
+            <tbody id="transactionsBody">
+              <tr>
+                <td colspan="5" class="loading-spinner">Cargando transacciones...</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </main>
+  </div>
+
+  <div class="modal" id="paymentModal">
+    <div class="modal-content modal-sm">
+      <div class="modal-header">
+        <h2>Procesando Pago</h2>
+      </div>
+      <div class="modal-body">
+        <div class="loading-spinner">Esperando pago de PayPal...</div>
+        <p class="payment-info">No cierres esta ventana hasta que el pago se complete.</p>
+        <div class="form-error" id="paymentError"></div>
+        <button class="btn btn-outline btn-block" id="cancelPayment">Cancelar</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="/js/app.js"></script>
+  <script src="/js/coins.js"></script>
+</body>
+</html>
