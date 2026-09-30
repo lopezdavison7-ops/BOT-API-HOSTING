@@ -1,0 +1,267 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Panel Admin | BOT-API-Hosting</title>
+  <link rel="stylesheet" href="/css/style.css">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+</head>
+<body class="dashboard-page">
+  <div class="dashboard-layout">
+    <aside class="sidebar">
+      <div class="sidebar-header">
+        <div class="nav-logo">
+          <span class="logo-icon">🤖</span>
+          <span class="logo-text">BOT-API<span class="accent">-Hosting</span></span>
+        </div>
+        <span class="admin-badge">ADMIN</span>
+      </div>
+      <nav class="sidebar-nav">
+        <a href="/admin.html" class="nav-item active">
+          <span class="nav-icon">📊</span> Dashboard
+        </a>
+        <a href="#" class="nav-item" data-section="users">
+          <span class="nav-icon">👥</span> Usuarios
+        </a>
+        <a href="#" class="nav-item" data-section="servers">
+          <span class="nav-icon">🖥️</span> Servidores
+        </a>
+        <a href="#" class="nav-item" data-section="transactions">
+          <span class="nav-icon">💳</span> Transacciones
+        </a>
+        <a href="/dashboard.html" class="nav-item">
+          <span class="nav-icon">🏠</span> Mi Panel
+        </a>
+        <a href="#" class="nav-item" id="logoutBtn">
+          <span class="nav-icon">🚪</span> Cerrar Sesión
+        </a>
+      </nav>
+      <div class="sidebar-footer">
+        <p>Powered by <strong>Alex Aguilar Gutiérrez</strong></p>
+      </div>
+    </aside>
+
+    <main class="main-content">
+      <header class="top-bar">
+        <div class="top-bar-left">
+          <h1>Panel de Administración</h1>
+        </div>
+        <div class="top-bar-right">
+          <div class="user-info">
+            <span class="admin-badge-sm">ADMIN</span>
+            <span id="userName">Admin</span>
+          </div>
+        </div>
+      </header>
+
+      <div class="content-area">
+        <div id="statsSection" class="admin-section active">
+          <div class="stats-grid">
+            <div class="stat-card">
+              <div class="stat-icon">👥</div>
+              <div class="stat-info">
+                <span class="stat-value" id="totalUsers">0</span>
+                <span class="stat-label">Usuarios</span>
+              </div>
+            </div>
+            <div class="stat-card">
+              <div class="stat-icon">🖥️</div>
+              <div class="stat-info">
+                <span class="stat-value" id="totalServers">0</span>
+                <span class="stat-label">Servidores</span>
+              </div>
+            </div>
+            <div class="stat-card">
+              <div class="stat-icon">▶️</div>
+              <div class="stat-info">
+                <span class="stat-value" id="activeServers">0</span>
+                <span class="stat-label">Activos</span>
+              </div>
+            </div>
+            <div class="stat-card">
+              <div class="stat-icon">💵</div>
+              <div class="stat-info">
+                <span class="stat-value" id="totalRevenue">$0</span>
+                <span class="stat-label">Ingresos</span>
+              </div>
+            </div>
+          </div>
+
+          <div class="section-header">
+            <h2>Usuarios Recientes</h2>
+          </div>
+          <div class="table-container">
+            <table class="data-table">
+              <thead>
+                <tr>
+                  <th>Usuario</th>
+                  <th>Email</th>
+                  <th>Coins</th>
+                  <th>Registro</th>
+                </tr>
+              </thead>
+              <tbody id="recentUsersBody">
+                <tr><td colspan="4" class="loading-spinner">Cargando...</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <div id="usersSection" class="admin-section">
+          <div class="section-header">
+            <h2>Gestión de Usuarios</h2>
+            <div class="search-box">
+              <input type="text" id="userSearch" placeholder="Buscar por usuario o email...">
+              <button class="btn btn-primary btn-sm" id="searchUsersBtn">Buscar</button>
+            </div>
+          </div>
+          <div class="table-container">
+            <table class="data-table">
+              <thead>
+                <tr>
+                  <th>Usuario</th>
+                  <th>Email</th>
+                  <th>Coins</th>
+                  <th>Rol</th>
+                  <th>Registro</th>
+                  <th>Acciones</th>
+                </tr>
+              </thead>
+              <tbody id="usersTableBody">
+                <tr><td colspan="6" class="loading-spinner">Cargando...</td></tr>
+              </tbody>
+            </table>
+          </div>
+          <div class="pagination" id="usersPagination"></div>
+        </div>
+
+        <div id="serversSection" class="admin-section">
+          <div class="section-header">
+            <h2>Gestión de Servidores</h2>
+          </div>
+          <div class="table-container">
+            <table class="data-table">
+              <thead>
+                <tr>
+                  <th>Nombre</th>
+                  <th>Usuario</th>
+                  <th>Plan</th>
+                  <th>Estado</th>
+                  <th>Vence</th>
+                  <th>Acciones</th>
+                </tr>
+              </thead>
+              <tbody id="serversTableBody">
+                <tr><td colspan="6" class="loading-spinner">Cargando...</td></tr>
+              </tbody>
+            </table>
+          </div>
+          <div class="pagination" id="serversPagination"></div>
+        </div>
+
+        <div id="transactionsSection" class="admin-section">
+          <div class="section-header">
+            <h2>Transacciones</h2>
+            <select id="transactionFilter" class="filter-select">
+              <option value="">Todas</option>
+              <option value="completed">Completadas</option>
+              <option value="pending">Pendientes</option>
+              <option value="failed">Fallidas</option>
+            </select>
+          </div>
+          <div class="table-container">
+            <table class="data-table">
+              <thead>
+                <tr>
+                  <th>Fecha</th>
+                  <th>Usuario</th>
+                  <th>Coins</th>
+                  <th>Monto USD</th>
+                  <th>Estado</th>
+                  <th>PayPal ID</th>
+                </tr>
+              </thead>
+              <tbody id="transactionsTableBody">
+                <tr><td colspan="6" class="loading-spinner">Cargando...</td></tr>
+              </tbody>
+            </table>
+          </div>
+          <div class="pagination" id="transactionsPagination"></div>
+        </div>
+      </div>
+    </main>
+  </div>
+
+  <div class="modal" id="userModal">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h2>Editar Usuario</h2>
+        <button class="modal-close" id="closeUserModal">&times;</button>
+      </div>
+      <div class="modal-body">
+        <div class="user-info-modal">
+          <p><strong>Usuario:</strong> <span id="modalUsername">-</span></p>
+          <p><strong>Email:</strong> <span id="modalEmail">-</span></p>
+          <p><strong>Coins actuales:</strong> <span id="modalCoins">0</span></p>
+        </div>
+
+        <form id="userCoinsForm">
+          <div class="form-group">
+            <label>Acción</label>
+            <select id="coinsAction" required>
+              <option value="add">Agregar Coins</option>
+              <option value="remove">Quitar Coins</option>
+              <option value="set">Establecer Coins</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label for="coinsAmount">Cantidad de Coins</label>
+            <input type="number" id="coinsAmount" min="1" step="0.01" required>
+          </div>
+          <div class="form-error" id="userModalError"></div>
+          <div class="form-success" id="userModalSuccess"></div>
+          <button type="submit" class="btn btn-primary btn-block">Aplicar Cambios</button>
+        </form>
+
+        <hr class="modal-divider">
+
+        <div class="user-role-section">
+          <h3>Cambiar Rol</h3>
+          <div class="role-buttons">
+            <button class="btn btn-outline btn-sm" id="makeUser">Usuario</button>
+            <button class="btn btn-warning btn-sm" id="makeAdmin">Admin</button>
+          </div>
+        </div>
+
+        <hr class="modal-divider">
+
+        <div class="user-danger-section">
+          <h3>Zona de Peligro</h3>
+          <button class="btn btn-danger btn-block" id="deleteUserBtn">Eliminar Usuario</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="modal" id="deleteServerModal">
+    <div class="modal-content modal-sm">
+      <div class="modal-header">
+        <h2>Eliminar Servidor</h2>
+        <button class="modal-close" id="closeDeleteServerModal">&times;</button>
+      </div>
+      <div class="modal-body">
+        <p>¿Eliminar este servidor? Esta acción no se puede deshacer.</p>
+        <div class="form-error" id="deleteServerError"></div>
+        <div class="modal-actions">
+          <button class="btn btn-outline" id="cancelDeleteServer">Cancelar</button>
+          <button class="btn btn-danger" id="confirmDeleteServer">Eliminar</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script src="/js/app.js"></script>
+  <script src="/js/admin.js"></script>
+</body>
+</html>
