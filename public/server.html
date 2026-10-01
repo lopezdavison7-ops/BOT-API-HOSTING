@@ -51,6 +51,7 @@
           <div class="server-info-grid">
             <div class="info-item"><span class="info-label">Plan:</span><span class="info-value" id="serverPlan">-</span></div>
             <div class="info-item"><span class="info-label">Vence:</span><span class="info-value" id="serverExpires">-</span></div>
+            <div class="info-item"><span class="info-label">Lenguaje:</span><span class="info-value" id="serverLanguage">-</span></div>
             <div class="info-item"><span class="info-label">Node.js:</span><span class="info-value" id="serverNode">-</span></div>
             <div class="info-item" style="grid-column: span 2;"><span class="info-label">Repositorio:</span><span class="info-value" id="serverRepo">No configurado</span></div>
           </div>
@@ -82,7 +83,7 @@
           <div class="tab-content" id="startup-tab">
             <div class="settings-card">
               <h3>Configuración de Startup</h3>
-              <p class="settings-description">Configura el repositorio Git y la versión de Node.js para tu bot (JavaScript o TypeScript).</p>
+              <p class="settings-description">Configura el repositorio Git y la versión para tu bot (JavaScript o TypeScript).</p>
 
               <form id="startupForm">
                 <div class="form-group">
@@ -92,13 +93,19 @@
                 </div>
 
                 <div class="form-group">
+                  <label for="language">Lenguaje de Programación</label>
+                  <select id="language" required>
+                    <option value="node" selected>Node.js (JavaScript / TypeScript)</option>
+                  </select>
+                </div>
+
+                <div class="form-group" id="nodeVersionGroup">
                   <label for="nodeVersion">Versión de Node.js</label>
                   <select id="nodeVersion">
                     <option value="16">Node.js 16</option>
                     <option value="18">Node.js 18</option>
                     <option value="20" selected>Node.js 20 (Recomendado)</option>
                   </select>
-                  <small>Detecta automáticamente JavaScript o TypeScript</small>
                 </div>
 
                 <div class="form-error" id="startupError"></div>
