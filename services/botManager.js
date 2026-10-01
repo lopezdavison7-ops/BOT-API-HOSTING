@@ -27,19 +27,15 @@ const addLog = (serverId, message) => {
   return next;
 };
 
-const buildSafeEnv = (serverDir) => {
-  const packagesDir = path.join(serverDir, 'packages');
-  return {
-    PATH: `/usr/local/bin:/usr/bin:/bin`,
-    HOME: process.env.HOME || '/home/container',
-    TMPDIR: '/tmp',
-    NODE_ENV: 'production',
-    LANG: 'C.UTF-8',
-    TERM: 'xterm',
-    BOT_DIR: serverDir,
-    PYTHONPATH: packagesDir
-  };
-};
+const buildSafeEnv = (serverDir) => ({
+  PATH: `/usr/local/bin:/usr/bin:/bin`,
+  HOME: process.env.HOME || '/home/container',
+  TMPDIR: '/tmp',
+  NODE_ENV: 'production',
+  LANG: 'C.UTF-8',
+  TERM: 'xterm',
+  BOT_DIR: serverDir
+});
 
 const createServerDirectory = async (serverId) => {
   const serverDir = path.join(BOTS_DIR, serverId);
@@ -79,27 +75,6 @@ const detectMainFile = async (serverDir, language) => {
   return language === 'python' ? 'main.py' : 'index.js';
 };
 
-// Crea un wrapper que inyecta la carpeta packages/ en sys.path
-const createPythonWrapper = async (serverDir, mainFile) => {
-  const wrapperPath = path.join(serverDir, '_run.py');
-  const mainName = path.basename(mainFile, '.py');
-  const wrapperCode = `import sys
-import os
-# Agregar la carpeta de paquetes al sys.path
-_packages = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'packages')
-if _packages not in sys.path:
-    sys.path.insert(0, _packages)
-
-# Importar y ejecutar el main del usuario
-import importlib.util
-_spec = importlib.util.spec_from_file_location("${mainName}", os.path.join(os.path.dirname(os.path.abspath(__file__)), "${mainFile}"))
-_module = importlib.util.module_from_spec(_spec)
-_spec.loader.exec_module(_module)
-`;
-  await fs.writeFile(wrapperPath, wrapperCode, 'utf8');
-  return wrapperPath;
-};
-
 const startServer = async (serverId, nodeVersion, io) => {
   if (isRunning(serverId)) throw new Error('El servidor ya está corriendo');
   const serverDir = path.join(BOTS_DIR, serverId);
@@ -125,11 +100,17 @@ const startServer = async (serverId, nodeVersion, io) => {
   let execArgs = [mainFile];
   
   if (language === 'python') {
-    execCmd = 'python3';
-    // Crear wrapper que inyecta packages/ en sys.path
-    const wrapperPath = await createPythonWrapper(serverDir, mainFile);
-    execArgs = [path.basename(wrapperPath)];
-    await emit('🔧 Wrapper Python creado (inyección automática de packages)');
+    // Usar el Python del entorno virtual
+    const venvPython = path.join(serverDir, 'venv', 'bin', 'python3');
+    try {
+      await fs.access(venvPython);
+      execCmd = venvPython;
+      execArgs = [mainFile];
+      await emit('✅ Usando entorno virtual de Python');
+    } catch {
+      await emit('⚠️ Entorno virtual no encontrado, reinstala el servidor');
+      throw new Error('Entorno virtual no encontrado');
+    }
   } else if (mainFile.endsWith('.ts')) {
     execCmd = 'npx';
     execArgs = ['ts-node', mainFile];
@@ -195,25 +176,6 @@ const sendCommand = (serverId, command) => {
   return { success: false, error: 'No se puede escribir en el proceso' };
 };
 
-const ensurePip = async (serverDir, io, serverId) => {
-  try {
-    await runCommand('python3', ['-m', 'pip', '--version'], serverDir, io, serverId, true);
-    return true;
-  } catch {}
-  
-  const homeDir = process.env.HOME || '/home/container';
-  const getPipPath = path.join(homeDir, 'get-pip.py');
-  
-  try {
-    await runCommand('curl', ['-fsSL', 'https://bootstrap.pypa.io/get-pip.py', '-o', getPipPath], serverDir, io, serverId);
-    await runCommand('python3', [getPipPath], serverDir, io, serverId);
-    await fs.rm(getPipPath, { force: true });
-    return true;
-  } catch (error) {
-    throw new Error(`No se pudo instalar pip: ${error.message}`);
-  }
-};
-
 const reinstall = async (serverId, repoUrl, nodeVersion, io) => {
   const serverDir = path.join(BOTS_DIR, serverId);
   const rows = await db.query('SELECT language FROM servers WHERE id = ?', [serverId]);
@@ -235,23 +197,21 @@ const reinstall = async (serverId, repoUrl, nodeVersion, io) => {
     await runCommand('git', ['clone', '--depth', '1', repoUrl, '.'], serverDir, io, serverId);
     
     if (language === 'python') {
-      const packagesDir = path.join(serverDir, 'packages');
-      await fs.mkdir(packagesDir, { recursive: true });
+      // Crear entorno virtual
+      await emit('🐍 Creando entorno virtual de Python...');
+      await runCommand('python3', ['-m', 'venv', 'venv'], serverDir, io, serverId);
       
-      await emit('🔧 Verificando instalación de pip...');
-      try {
-        await ensurePip(serverDir, io, serverId);
-        await emit('✅ pip disponible');
-      } catch (e) {
-        await emit(`❌ Error crítico: ${e.message}`);
-        throw e;
-      }
+      const venvPython = path.join(serverDir, 'venv', 'bin', 'python3');
+      const venvPip = path.join(serverDir, 'venv', 'bin', 'pip');
+      
+      await emit('🔧 Actualizando pip en el entorno virtual...');
+      await runCommand(venvPython, ['-m', 'pip', 'install', '--upgrade', 'pip'], serverDir, io, serverId);
       
       await emit('🔧 Instalando WAeys (WhatsApp library) desde GitHub...');
       const tmpWaeys = '/tmp/waeys-install-' + serverId.slice(0, 8);
       try {
         await runCommand('git', ['clone', '--depth', '1', 'https://github.com/toZyn/WAeys.git', tmpWaeys], serverDir, io, serverId);
-        await runCommand('python3', ['-m', 'pip', 'install', '--target', packagesDir, tmpWaeys], serverDir, io, serverId);
+        await runCommand(venvPython, ['-m', 'pip', 'install', tmpWaeys], serverDir, io, serverId);
         await emit('✅ WAeys instalado correctamente');
       } catch (e) {
         await emit(`⚠️ Error al instalar WAeys: ${e.message}`);
@@ -262,11 +222,13 @@ const reinstall = async (serverId, repoUrl, nodeVersion, io) => {
       await emit('🐍 Instalando dependencias del proyecto...');
       try {
         await fs.access(path.join(serverDir, 'requirements.txt'));
-        await runCommand('python3', ['-m', 'pip', 'install', '--target', packagesDir, '--upgrade', '-r', 'requirements.txt'], serverDir, io, serverId);
+        await runCommand(venvPython, ['-m', 'pip', 'install', '-r', 'requirements.txt'], serverDir, io, serverId);
         await emit('✅ Dependencias instaladas');
       } catch {
         await emit('ℹ️ No se encontró requirements.txt');
       }
+      
+      await emit('✅ Entorno virtual configurado correctamente');
     } else {
       await emit('📦 Instalando dependencias (npm install)...');
       try {
@@ -286,20 +248,16 @@ const reinstall = async (serverId, repoUrl, nodeVersion, io) => {
   }
 };
 
-const runCommand = (command, args, cwd, io, serverId, silent = false) => {
+const runCommand = (command, args, cwd, io, serverId) => {
   return new Promise((resolve, reject) => {
     const proc = spawn(command, args, { cwd, env: buildSafeEnv(cwd) });
     proc.stdout.on('data', (data) => {
-      if (!silent) {
-        io.to(`console-${serverId}`).emit('console-output', data.toString());
-        addLog(serverId, data.toString());
-      }
+      io.to(`console-${serverId}`).emit('console-output', data.toString());
+      addLog(serverId, data.toString());
     });
     proc.stderr.on('data', (data) => {
-      if (!silent) {
-        io.to(`console-${serverId}`).emit('console-output', data.toString());
-        addLog(serverId, data.toString());
-      }
+      io.to(`console-${serverId}`).emit('console-output', data.toString());
+      addLog(serverId, data.toString());
     });
     proc.on('close', (code) => (code === 0 ? resolve() : reject(new Error(`${command} terminó con código ${code}`))));
     proc.on('error', reject);
