@@ -1,4 +1,3 @@
-
 let socket = null;
 let serverId = null;
 let serverData = null;
@@ -19,10 +18,22 @@ document.addEventListener('DOMContentLoaded', () => {
   setupConsole();
   setupActions();
   setupStartupForm();
+  setupLanguageToggle();
   setupReinstall();
   setupDeleteModal();
   setupRenewModal();
 });
+
+const setupLanguageToggle = () => {
+  const languageSelect = document.getElementById('language');
+  const nodeVersionGroup = document.getElementById('nodeVersionGroup');
+
+  if (languageSelect && nodeVersionGroup) {
+    languageSelect.addEventListener('change', () => {
+      nodeVersionGroup.style.display = languageSelect.value === 'python' ? 'none' : 'block';
+    });
+  }
+};
 
 const loadServer = async () => {
   const result = await apiFetch(`/servers/${serverId}`);
@@ -40,6 +51,7 @@ const updateServerUI = () => {
   document.getElementById('serverPlan').textContent = capitalizeFirst(serverData.plan);
   document.getElementById('serverExpires').textContent = formatDate(serverData.expires_at);
   document.getElementById('serverNode').textContent = `v${serverData.node_version}`;
+  document.getElementById('serverLanguage').textContent = serverData.language === 'python' ? 'Python 3' : 'Node.js';
   document.getElementById('serverRepo').textContent = serverData.repo_url || 'No configurado';
   document.getElementById('serverId').textContent = serverData.id;
   document.getElementById('serverCreated').textContent = formatDate(serverData.created_at);
@@ -64,6 +76,10 @@ const updateServerUI = () => {
 
   if (serverData.repo_url) document.getElementById('repoUrl').value = serverData.repo_url;
   document.getElementById('nodeVersion').value = serverData.node_version;
+  document.getElementById('language').value = serverData.language || 'node';
+
+  // Disparar el evento para ocultar/mostrar la versión de Node
+  document.getElementById('language').dispatchEvent(new Event('change'));
 
   updateButtons();
 };
@@ -177,61 +193,31 @@ const setupStartupForm = () => {
   const startupForm = document.getElementById('startupForm');
   const startupError = document.getElementById('startupError');
   const startupSuccess = document.getElementById('startupSuccess');
-  const submitBtn = startupForm.querySelector('button[type="submit"]');
 
   startupForm.addEventListener('submit', async (e) => {
     e.preventDefault();
-    
-    // Deshabilitar botón mientras procesa
-    submitBtn.disabled = true;
-    submitBtn.textContent = 'Guardando...';
-    
     startupError.style.display = 'none';
     startupSuccess.style.display = 'none';
 
     const repoUrl = document.getElementById('repoUrl').value.trim();
     const nodeVersion = document.getElementById('nodeVersion').value;
+    const language = document.getElementById('language').value;
 
-    // Validación básica
-    if (!repoUrl) {
-      startupError.textContent = 'La URL del repositorio es obligatoria';
+    const result = await apiFetch(`/servers/${serverId}/startup`, {
+      method: 'PUT',
+      body: JSON.stringify({ repo_url: repoUrl, node_version: nodeVersion, language })
+    });
+
+    if (result && result.ok) {
+      startupSuccess.textContent = 'Startup actualizado correctamente';
+      startupSuccess.style.display = 'block';
+      serverData.repo_url = repoUrl;
+      serverData.node_version = nodeVersion;
+      serverData.language = language;
+      updateServerUI();
+    } else {
+      startupError.textContent = result?.data?.error || 'Error al actualizar startup';
       startupError.style.display = 'block';
-      submitBtn.disabled = false;
-      submitBtn.textContent = 'Guardar Configuración';
-      return;
-    }
-
-    console.log('Enviando:', { repo_url: repoUrl, node_version: nodeVersion, language: 'node' });
-
-    try {
-      const result = await apiFetch(`/servers/${serverId}/startup`, {
-        method: 'PUT',
-        body: JSON.stringify({ 
-          repo_url: repoUrl, 
-          node_version: nodeVersion, 
-          language: 'node' 
-        })
-      });
-
-      console.log('Respuesta:', result);
-
-      if (result && result.ok) {
-        startupSuccess.textContent = '✅ Startup actualizado correctamente';
-        startupSuccess.style.display = 'block';
-        serverData.repo_url = repoUrl;
-        serverData.node_version = nodeVersion;
-        updateServerUI();
-      } else {
-        startupError.textContent = result?.data?.error || 'Error al actualizar startup';
-        startupError.style.display = 'block';
-      }
-    } catch (error) {
-      console.error('Error en startup:', error);
-      startupError.textContent = 'Error de red: ' + error.message;
-      startupError.style.display = 'block';
-    } finally {
-      submitBtn.disabled = false;
-      submitBtn.textContent = 'Guardar Configuración';
     }
   });
 };
