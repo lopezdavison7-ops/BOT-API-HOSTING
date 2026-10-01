@@ -16,6 +16,7 @@ const authRoutes = require('./routes/auth');
 const coinsRoutes = require('./routes/coins');
 const serversRoutes = require('./routes/servers');
 const adminRoutes = require('./routes/admin');
+const filesRoutes = require('./routes/files');
 const botManager = require('./services/botManager');
 
 const app = express();
@@ -134,6 +135,7 @@ app.use(express.static(path.join(__dirname, 'public')));
 app.use('/api/auth', authRoutes);
 app.use('/api/coins', coinsRoutes);
 app.use('/api/servers', serversRoutes);
+app.use('/api/servers', filesRoutes);
 app.use('/api/admin', adminRoutes);
 
 cron.schedule('0 * * * *', async () => {
