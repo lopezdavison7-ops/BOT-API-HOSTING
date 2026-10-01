@@ -182,27 +182,45 @@ const reinstall = async (serverId, repoUrl, nodeVersion, io) => {
     await runCommand('git', ['clone', '--depth', '1', repoUrl, '.'], serverDir, io, serverId);
     
     if (language === 'python') {
-      // PASO 1: Instalar WAeys manualmente desde GitHub (solución al problema)
+      // Actualizar pip primero
+      await emit('🔧 Actualizando pip...');
+      try {
+        await runCommand('python3', ['-m', 'pip', 'install', '--upgrade', 'pip'], serverDir, io, serverId);
+      } catch (e) {
+        await emit(`⚠️ No se pudo actualizar pip: ${e.message}`);
+      }
+      
+      // Instalar WAeys desde GitHub (para bots de WhatsApp)
       await emit('🔧 Instalando WAeys (WhatsApp library) desde GitHub...');
       const tmpWaeys = '/tmp/waeys-install-' + serverId.slice(0, 8);
       try {
         await runCommand('git', ['clone', '--depth', '1', 'https://github.com/toZyn/WAeys.git', tmpWaeys], serverDir, io, serverId);
-        await runCommand('pip3', ['install', tmpWaeys], serverDir, io, serverId);
+        await runCommand('python3', ['-m', 'pip', 'install', tmpWaeys], serverDir, io, serverId);
         await emit('✅ WAeys instalado correctamente');
       } catch (e) {
-        await emit(`⚠️ Advertencia al instalar WAeys: ${e.message}`);
+        await emit(`⚠️ Error al instalar WAeys: ${e.message}`);
       } finally {
         try { await fs.rm(tmpWaeys, { recursive: true, force: true }); } catch {}
       }
       
-      // PASO 2: Instalar requirements.txt si existe
-      await emit('🐍 Instalando dependencias adicionales...');
+      // Instalar dependencias comunes de Python
+      await emit('🔧 Instalando dependencias comunes...');
+      const commonPackages = ['flask', 'requests', 'python-dotenv'];
+      try {
+        await runCommand('python3', ['-m', 'pip', 'install', ...commonPackages], serverDir, io, serverId);
+        await emit('✅ Dependencias comunes instaladas');
+      } catch (e) {
+        await emit(`⚠️ Error al instalar dependencias comunes: ${e.message}`);
+      }
+      
+      // Instalar requirements.txt si existe
+      await emit('🐍 Instalando dependencias del proyecto...');
       try {
         await fs.access(path.join(serverDir, 'requirements.txt'));
-        await runCommand('pip3', ['install', '-r', 'requirements.txt', '--no-deps'], serverDir, io, serverId);
-        await emit('✅ Dependencias instaladas desde requirements.txt');
+        await runCommand('python3', ['-m', 'pip', 'install', '-r', 'requirements.txt'], serverDir, io, serverId);
+        await emit('✅ Dependencias del proyecto instaladas');
       } catch {
-        await emit('ℹ️ No se encontró requirements.txt, omitiendo.');
+        await emit('ℹ️ No se encontró requirements.txt');
       }
     } else {
       await emit('📦 Instalando dependencias (npm install)...');
