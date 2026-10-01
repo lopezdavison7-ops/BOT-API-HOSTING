@@ -7,7 +7,6 @@ const db = require('../db/database');
 const runningProcesses = new Map();
 const logQueues = new Map();
 const BOTS_DIR = path.join(__dirname, '..', 'bots');
-
 const MEM_LIMITS = { basico: 256, estandar: 512, pro: 1024, ultra: 2048 };
 
 const initialize = async () => {
@@ -64,11 +63,9 @@ const detectMainFile = async (serverDir, language) => {
       } catch {}
     }
   } catch {}
-  
   const nodeCandidates = ['index.js', 'main.js', 'app.js', 'bot.js', 'server.js', 'src/index.js', 'src/main.js', 'index.ts', 'bot.ts'];
   const pythonCandidates = ['main.py', 'bot.py', 'app.py', 'index.py'];
   const candidates = language === 'python' ? pythonCandidates : nodeCandidates;
-  
   for (const candidate of candidates) {
     try {
       await fs.access(path.join(serverDir, candidate));
@@ -80,7 +77,6 @@ const detectMainFile = async (serverDir, language) => {
 
 const startServer = async (serverId, nodeVersion, io) => {
   if (isRunning(serverId)) throw new Error('El servidor ya está corriendo');
-  
   const serverDir = path.join(BOTS_DIR, serverId);
   const rows = await db.query('SELECT language FROM servers WHERE id = ?', [serverId]);
   const language = rows.length > 0 ? rows[0].language : 'node';
@@ -95,49 +91,37 @@ const startServer = async (serverId, nodeVersion, io) => {
   };
   
   if (language === 'node' && !files.includes('package.json')) {
-    await emit('❌ Error: No se encontró package.json. Configura el repositorio y haz Reinstall.');
+    await emit('❌ Error: No se encontró package.json.');
     throw new Error('package.json no encontrado');
   }
   
   const mainFile = await detectMainFile(serverDir, language);
-  
   let execCmd = 'node';
   let execArgs = [mainFile];
-  
-  if (language === 'python') {
-    execCmd = 'python3';
-  } else if (mainFile.endsWith('.ts')) {
-    execCmd = 'npx';
-    execArgs = ['ts-node', mainFile];
-  }
+  if (language === 'python') execCmd = 'python3';
+  else if (mainFile.endsWith('.ts')) { execCmd = 'npx'; execArgs = ['ts-node', mainFile]; }
   
   await emit(`🚀 Iniciando servidor (${language === 'python' ? 'Python 3' : `Node ${nodeVersion || '20'}`})...`);
   await emit(`📄 Archivo principal detectado: ${mainFile}`);
   await emit(`🛡️ Entorno aislado | Límite de RAM: ${language === 'node' ? memLimit + 'MB' : 'N/A (Python)'}`);
   
   const ramArgs = language === 'node' ? [`--max-old-space-size=${memLimit}`] : [];
-  
   const proc = spawn(execCmd, [...ramArgs, ...execArgs], {
-    cwd: serverDir,
-    env: buildSafeEnv(serverDir),
-    shell: false
+    cwd: serverDir, env: buildSafeEnv(serverDir), shell: false
   });
   
   runningProcesses.set(serverId, proc);
   proc.stdout.on('data', (data) => emit(data.toString()));
   proc.stderr.on('data', (data) => emit(`❌ ${data.toString()}`));
-  
   proc.on('close', async (code, signal) => {
     runningProcesses.delete(serverId);
-    if (proc.__stopping) {
-      await emit('🛑 Servidor detenido manualmente.');
-    } else {
+    if (proc.__stopping) await emit('🛑 Servidor detenido manualmente.');
+    else {
       await emit(`🛑 Servidor detenido (código: ${code}${signal ? `, señal: ${signal}` : ''})`);
       if (code !== 0) await emit('💡 El bot cerró por su cuenta. Revisa los mensajes ❌ de arriba.');
     }
     await db.query('UPDATE servers SET status = ? WHERE id = ?', ['stopped', serverId]);
   });
-  
   proc.on('error', async (error) => {
     runningProcesses.delete(serverId);
     await emit(`❌ Error al iniciar el proceso: ${error.message}`);
@@ -191,24 +175,34 @@ const reinstall = async (serverId, repoUrl, nodeVersion, io) => {
     await db.query('UPDATE servers SET status = ? WHERE id = ?', ['installing', serverId]);
     await emit('📦 Iniciando reinstalación...');
     
-    // 1. Limpiar y crear directorio
     await fs.rm(serverDir, { recursive: true, force: true });
     await fs.mkdir(serverDir, { recursive: true });
     
-    // 2. Clonar repositorio (usando '.' para clonar DIRECTO en el directorio actual)
     await emit(`📥 Clonando repositorio: ${repoUrl}`);
     await runCommand('git', ['clone', '--depth', '1', repoUrl, '.'], serverDir, io, serverId);
     
-    // 3. Verificar e instalar dependencias
     if (language === 'python') {
-      await emit('🐍 Instalando dependencias de Python...');
-      const reqPath = path.join(serverDir, 'requirements.txt');
+      // PASO 1: Instalar WAeys manualmente desde GitHub (solución al problema)
+      await emit('🔧 Instalando WAeys (WhatsApp library) desde GitHub...');
+      const tmpWaeys = '/tmp/waeys-install-' + serverId.slice(0, 8);
       try {
-        await fs.access(reqPath);
-        await emit('✅ requirements.txt encontrado. Instalando con pip3...');
-        await runCommand('pip3', ['install', '-r', 'requirements.txt'], serverDir, io, serverId);
+        await runCommand('git', ['clone', '--depth', '1', 'https://github.com/toZyn/WAeys.git', tmpWaeys], serverDir, io, serverId);
+        await runCommand('pip3', ['install', tmpWaeys], serverDir, io, serverId);
+        await emit('✅ WAeys instalado correctamente');
+      } catch (e) {
+        await emit(`⚠️ Advertencia al instalar WAeys: ${e.message}`);
+      } finally {
+        try { await fs.rm(tmpWaeys, { recursive: true, force: true }); } catch {}
+      }
+      
+      // PASO 2: Instalar requirements.txt si existe
+      await emit('🐍 Instalando dependencias adicionales...');
+      try {
+        await fs.access(path.join(serverDir, 'requirements.txt'));
+        await runCommand('pip3', ['install', '-r', 'requirements.txt', '--no-deps'], serverDir, io, serverId);
+        await emit('✅ Dependencias instaladas desde requirements.txt');
       } catch {
-        await emit('⚠️ No se encontró requirements.txt en el repositorio. Omitiendo instalación.');
+        await emit('ℹ️ No se encontró requirements.txt, omitiendo.');
       }
     } else {
       await emit('📦 Instalando dependencias (npm install)...');
@@ -216,7 +210,7 @@ const reinstall = async (serverId, repoUrl, nodeVersion, io) => {
         await fs.access(path.join(serverDir, 'package.json'));
         await runCommand('npm', ['install', '--production'], serverDir, io, serverId);
       } catch {
-        await emit('⚠️ No se encontró package.json. Omitiendo npm install.');
+        await emit('⚠️ No se encontró package.json.');
       }
     }
     
