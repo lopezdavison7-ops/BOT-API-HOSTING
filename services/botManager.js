@@ -27,15 +27,19 @@ const addLog = (serverId, message) => {
   return next;
 };
 
-const buildSafeEnv = (serverDir) => ({
-  PATH: process.env.PATH || '/usr/local/bin:/usr/bin:/bin',
-  HOME: serverDir,
-  TMPDIR: serverDir,
-  NODE_ENV: 'production',
-  LANG: 'C.UTF-8',
-  TERM: 'xterm',
-  BOT_DIR: serverDir
-});
+const buildSafeEnv = (serverDir) => {
+  const homeDir = process.env.HOME || '/home/container';
+  return {
+    PATH: `${homeDir}/.local/bin:/usr/local/bin:/usr/bin:/bin`,
+    HOME: homeDir,
+    TMPDIR: '/tmp',
+    NODE_ENV: 'production',
+    LANG: 'C.UTF-8',
+    TERM: 'xterm',
+    BOT_DIR: serverDir,
+    PYTHONPATH: `${homeDir}/.local/lib/python3/dist-packages`
+  };
+};
 
 const createServerDirectory = async (serverId) => {
   const serverDir = path.join(BOTS_DIR, serverId);
@@ -161,6 +165,29 @@ const sendCommand = (serverId, command) => {
   return { success: false, error: 'No se puede escribir en el proceso' };
 };
 
+const ensurePip = async (serverDir, io, serverId) => {
+  // Verifica si pip ya está instalado intentando ejecutar un comando simple
+  try {
+    await runCommand('python3', ['-m', 'pip', '--version'], serverDir, io, serverId, true);
+    return true; // pip ya existe
+  } catch {
+    // pip no está, hay que instalarlo
+  }
+  
+  // Descarga get-pip.py y lo instala
+  const homeDir = process.env.HOME || '/home/container';
+  const getPipPath = path.join(homeDir, 'get-pip.py');
+  
+  try {
+    await runCommand('curl', ['-fsSL', 'https://bootstrap.pypa.io/get-pip.py', '-o', getPipPath], serverDir, io, serverId);
+    await runCommand('python3', [getPipPath, '--user', '--break-system-packages'], serverDir, io, serverId);
+    await fs.rm(getPipPath, { force: true });
+    return true;
+  } catch (error) {
+    throw new Error(`No se pudo instalar pip: ${error.message}`);
+  }
+};
+
 const reinstall = async (serverId, repoUrl, nodeVersion, io) => {
   const serverDir = path.join(BOTS_DIR, serverId);
   const rows = await db.query('SELECT language FROM servers WHERE id = ?', [serverId]);
@@ -182,20 +209,30 @@ const reinstall = async (serverId, repoUrl, nodeVersion, io) => {
     await runCommand('git', ['clone', '--depth', '1', repoUrl, '.'], serverDir, io, serverId);
     
     if (language === 'python') {
-      // Actualizar pip primero
+      // PASO 1: Asegurar que pip está instalado
+      await emit('🔧 Verificando instalación de pip...');
+      try {
+        await ensurePip(serverDir, io, serverId);
+        await emit('✅ pip disponible');
+      } catch (e) {
+        await emit(`❌ Error crítico: ${e.message}`);
+        throw e;
+      }
+      
+      // PASO 2: Actualizar pip
       await emit('🔧 Actualizando pip...');
       try {
-        await runCommand('python3', ['-m', 'pip', 'install', '--upgrade', 'pip'], serverDir, io, serverId);
+        await runCommand('python3', ['-m', 'pip', 'install', '--upgrade', 'pip', '--user', '--break-system-packages'], serverDir, io, serverId);
       } catch (e) {
         await emit(`⚠️ No se pudo actualizar pip: ${e.message}`);
       }
       
-      // Instalar WAeys desde GitHub (para bots de WhatsApp)
+      // PASO 3: Instalar WAeys desde GitHub
       await emit('🔧 Instalando WAeys (WhatsApp library) desde GitHub...');
       const tmpWaeys = '/tmp/waeys-install-' + serverId.slice(0, 8);
       try {
         await runCommand('git', ['clone', '--depth', '1', 'https://github.com/toZyn/WAeys.git', tmpWaeys], serverDir, io, serverId);
-        await runCommand('python3', ['-m', 'pip', 'install', tmpWaeys], serverDir, io, serverId);
+        await runCommand('python3', ['-m', 'pip', 'install', '--user', '--break-system-packages', tmpWaeys], serverDir, io, serverId);
         await emit('✅ WAeys instalado correctamente');
       } catch (e) {
         await emit(`⚠️ Error al instalar WAeys: ${e.message}`);
@@ -203,22 +240,12 @@ const reinstall = async (serverId, repoUrl, nodeVersion, io) => {
         try { await fs.rm(tmpWaeys, { recursive: true, force: true }); } catch {}
       }
       
-      // Instalar dependencias comunes de Python
-      await emit('🔧 Instalando dependencias comunes...');
-      const commonPackages = ['flask', 'requests', 'python-dotenv'];
-      try {
-        await runCommand('python3', ['-m', 'pip', 'install', ...commonPackages], serverDir, io, serverId);
-        await emit('✅ Dependencias comunes instaladas');
-      } catch (e) {
-        await emit(`⚠️ Error al instalar dependencias comunes: ${e.message}`);
-      }
-      
-      // Instalar requirements.txt si existe
+      // PASO 4: Instalar requirements.txt
       await emit('🐍 Instalando dependencias del proyecto...');
       try {
         await fs.access(path.join(serverDir, 'requirements.txt'));
-        await runCommand('python3', ['-m', 'pip', 'install', '-r', 'requirements.txt'], serverDir, io, serverId);
-        await emit('✅ Dependencias del proyecto instaladas');
+        await runCommand('python3', ['-m', 'pip', 'install', '--user', '--break-system-packages', '-r', 'requirements.txt'], serverDir, io, serverId);
+        await emit('✅ Dependencias instaladas');
       } catch {
         await emit('ℹ️ No se encontró requirements.txt');
       }
@@ -241,16 +268,20 @@ const reinstall = async (serverId, repoUrl, nodeVersion, io) => {
   }
 };
 
-const runCommand = (command, args, cwd, io, serverId) => {
+const runCommand = (command, args, cwd, io, serverId, silent = false) => {
   return new Promise((resolve, reject) => {
     const proc = spawn(command, args, { cwd, env: buildSafeEnv(cwd) });
     proc.stdout.on('data', (data) => {
-      io.to(`console-${serverId}`).emit('console-output', data.toString());
-      addLog(serverId, data.toString());
+      if (!silent) {
+        io.to(`console-${serverId}`).emit('console-output', data.toString());
+        addLog(serverId, data.toString());
+      }
     });
     proc.stderr.on('data', (data) => {
-      io.to(`console-${serverId}`).emit('console-output', data.toString());
-      addLog(serverId, data.toString());
+      if (!silent) {
+        io.to(`console-${serverId}`).emit('console-output', data.toString());
+        addLog(serverId, data.toString());
+      }
     });
     proc.on('close', (code) => (code === 0 ? resolve() : reject(new Error(`${command} terminó con código ${code}`))));
     proc.on('error', reject);
