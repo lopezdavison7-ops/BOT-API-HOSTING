@@ -7,6 +7,9 @@ const path = require('path');
 const fs = require('fs');
 const cron = require('node-cron');
 const selfsigned = require('selfsigned');
+const helmet = require('helmet');
+const rateLimit = require('express-rate-limit');
+const jwt = require('jsonwebtoken');
 
 const db = require('./db/database');
 const authRoutes = require('./routes/auth');
@@ -22,17 +25,68 @@ const io = new Server({
   cors: { origin: "*", methods: ["GET", "POST"] }
 });
 
+io.use((socket, next) => {
+  const token = socket.handshake.auth && socket.handshake.auth.token;
+  if (!token) return next(new Error('Autenticación requerida'));
+  try {
+    const decoded = jwt.verify(token, process.env.JWT_SECRET);
+    socket.userId = decoded.userId;
+    next();
+  } catch (error) {
+    next(new Error('Token inválido'));
+  }
+});
+
+const canAccessServer = async (userId, serverId) => {
+  try {
+    const rows = await db.query(
+      'SELECT s.user_id, u.role FROM servers s JOIN users u ON u.id = s.user_id WHERE s.id = ?',
+      [serverId]
+    );
+    if (rows.length === 0) return false;
+    return rows[0].user_id === userId || rows[0].role === 'admin';
+  } catch (error) {
+    return false;
+  }
+};
+
 io.on('connection', (socket) => {
-  socket.on('join-console', (serverId) => {
-    socket.join(`console-${serverId}`);
+  socket.on('join-console', async (serverId) => {
+    if (await canAccessServer(socket.userId, serverId)) {
+      socket.join(`console-${serverId}`);
+    }
   });
-  
-  socket.on('send-command', (data) => {
-    botManager.sendCommand(data.serverId, data.command);
+
+  socket.on('send-command', async (data) => {
+    if (await canAccessServer(socket.userId, data.serverId)) {
+      botManager.sendCommand(data.serverId, data.command);
+    }
   });
 });
 
 app.set('io', io);
+
+app.use(helmet({
+  contentSecurityPolicy: false,
+  crossOriginEmbedderPolicy: false
+}));
+
+const apiLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: 120,
+  standardHeaders: true,
+  legacyHeaders: false
+});
+app.use('/api/', apiLimiter);
+
+const authLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 30,
+  standardHeaders: true,
+  legacyHeaders: false
+});
+app.use('/api/auth/login', authLimiter);
+app.use('/api/auth/register', authLimiter);
 
 const CERT_DIR = path.join(__dirname, 'data', 'certs');
 const CERT_PATH = path.join(CERT_DIR, 'cert.pem');
@@ -132,6 +186,7 @@ async function startServer() {
     }
     
     console.log(`👤 Admin: ${process.env.ADMIN_EMAIL}`);
+    console.log('🛡️ Seguridad: helmet + rate-limit + socket JWT activos');
   } catch (error) {
     console.error('❌ Error al iniciar servidor:', error);
     process.exit(1);
