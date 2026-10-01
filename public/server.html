@@ -95,6 +95,7 @@
             <button class="tab active" data-tab="console">💻 Consola</button>
             <button class="tab" data-tab="startup">⚙️ Startup</button>
             <button class="tab" data-tab="settings">🔧 Settings</button>
+            <button class="tab" data-tab="files">📁 Archivos</button>
           </div>
 
           <div class="tab-content active" id="console-tab">
@@ -179,6 +180,30 @@
               </div>
             </div>
           </div>
+
+          <div class="tab-content" id="files-tab">
+            <div class="files-toolbar">
+              <div class="files-breadcrumb" id="filesBreadcrumb"></div>
+              <div class="files-actions">
+                <button class="btn btn-outline btn-sm" id="newFileBtn">+ Archivo</button>
+                <button class="btn btn-outline btn-sm" id="newFolderBtn">+ Carpeta</button>
+                <button class="btn btn-outline btn-sm" id="refreshFilesBtn">🔄</button>
+              </div>
+            </div>
+            <div class="file-list" id="fileList">
+              <div class="loading-spinner">Cargando archivos...</div>
+            </div>
+            <div class="file-editor" id="fileEditor" style="display:none;">
+              <div class="file-editor-header">
+                <span id="editorFileName">archivo.js</span>
+                <div class="file-editor-buttons">
+                  <button class="btn btn-success btn-sm" id="saveFileBtn">💾 Guardar</button>
+                  <button class="btn btn-outline btn-sm" id="closeEditorBtn">Cerrar</button>
+                </div>
+              </div>
+              <textarea id="fileContent" class="file-editor-textarea" spellcheck="false"></textarea>
+            </div>
+          </div>
         </div>
       </div>
     </main>
@@ -222,5 +247,6 @@
 
   <script src="/js/app.js"></script>
   <script src="/js/server-panel.js"></script>
+  <script src="/js/files.js"></script>
 </body>
 </html>
