@@ -92,6 +92,7 @@ const createTables = async () => {
       plan TEXT NOT NULL CHECK(plan IN ('basico','estandar','pro','ultra')),
       repo_url TEXT,
       node_version TEXT DEFAULT '20',
+      language TEXT DEFAULT 'node' CHECK(language IN ('node', 'python')),
       status TEXT DEFAULT 'stopped' CHECK(status IN ('stopped','running','installing','expired')),
       coins_cost REAL NOT NULL,
       expires_at TEXT NOT NULL,
