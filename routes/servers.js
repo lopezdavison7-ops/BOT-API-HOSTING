@@ -304,6 +304,15 @@ router.post('/:id/restart', authenticate, async (req, res) => {
 
 router.get('/:id/console', authenticate, async (req, res) => {
   try {
+    const owners = await db.query(
+      'SELECT s.id FROM servers s JOIN users u ON u.id = s.user_id WHERE s.id = ? AND (s.user_id = ? OR u.role = ?)',
+      [req.params.id, req.user.id, 'admin']
+    );
+    
+    if (owners.length === 0) {
+      return res.status(403).json({ error: 'No tienes acceso a este servidor' });
+    }
+    
     const logs = await db.query(
       'SELECT log FROM server_logs WHERE server_id = ? ORDER BY created_at DESC LIMIT 100',
       [req.params.id]
