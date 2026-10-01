@@ -3,47 +3,77 @@ let currentFilePath = '';
 let filesLoadedOnce = false;
 let editingFilePath = null;
 
+const filesEsc = (text) => {
+  return String(text)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+};
+
 document.addEventListener('DOMContentLoaded', () => {
-  if (!requireAuth()) return;
-  
-  const urlParams = new URLSearchParams(window.location.search);
-  fileServerId = urlParams.get('id');
-  if (!fileServerId) return;
-  
-  const filesTabBtn = document.querySelector('[data-tab="files"]');
-  if (filesTabBtn) {
-    filesTabBtn.addEventListener('click', () => {
-      if (!filesLoadedOnce) {
-        filesLoadedOnce = true;
-        loadFileManager('');
-      }
+  try {
+    if (!requireAuth()) return;
+    
+    const urlParams = new URLSearchParams(window.location.search);
+    fileServerId = urlParams.get('id');
+    if (!fileServerId) return;
+    
+    const filesTabBtn = document.querySelector('[data-tab="files"]');
+    if (filesTabBtn) {
+      filesTabBtn.addEventListener('click', () => {
+        if (!filesLoadedOnce) {
+          filesLoadedOnce = true;
+          loadFileManager('');
+        }
+      });
+    }
+    
+    document.getElementById('refreshFilesBtn').addEventListener('click', () => loadFileManager(currentFilePath));
+    document.getElementById('newFileBtn').addEventListener('click', () => createFileItem('file'));
+    document.getElementById('newFolderBtn').addEventListener('click', () => createFileItem('dir'));
+    document.getElementById('saveFileBtn').addEventListener('click', saveCurrentFile);
+    document.getElementById('closeEditorBtn').addEventListener('click', () => {
+      document.getElementById('fileEditor').style.display = 'none';
+      editingFilePath = null;
     });
+  } catch (error) {
+    showFilesError('Error al inicializar: ' + error.message);
   }
-  
-  document.getElementById('refreshFilesBtn').addEventListener('click', () => loadFileManager(currentFilePath));
-  document.getElementById('newFileBtn').addEventListener('click', () => createFileItem('file'));
-  document.getElementById('newFolderBtn').addEventListener('click', () => createFileItem('dir'));
-  document.getElementById('saveFileBtn').addEventListener('click', saveCurrentFile);
-  document.getElementById('closeEditorBtn').addEventListener('click', () => {
-    document.getElementById('fileEditor').style.display = 'none';
-    editingFilePath = null;
-  });
 });
+
+const showFilesError = (message) => {
+  const fileList = document.getElementById('fileList');
+  if (fileList) {
+    fileList.innerHTML = `<div class="loading-spinner" style="color: var(--danger);">❌ ${filesEsc(message)}</div>`;
+  }
+};
 
 const loadFileManager = async (path) => {
   currentFilePath = path;
   const fileList = document.getElementById('fileList');
   fileList.innerHTML = '<div class="loading-spinner">Cargando archivos...</div>';
   
-  const result = await apiFetch(`/servers/${fileServerId}/files?path=${encodeURIComponent(path)}`);
-  
-  if (!result || !result.ok) {
-    fileList.innerHTML = `<div class="loading-spinner">${result?.data?.error || 'Error al cargar archivos'}</div>`;
+  let result;
+  try {
+    result = await apiFetch(`/servers/${fileServerId}/files?path=${encodeURIComponent(path)}`);
+  } catch (error) {
+    showFilesError('Error de red: ' + error.message);
     return;
   }
   
-  renderFileBreadcrumb(path);
-  renderFileList(result.data.items, path);
+  if (!result || !result.ok) {
+    showFilesError(`Error ${result?.status || 'desconocido'}: ${result?.data?.error || 'La API no respondió. Reinicia el servidor en HidenCloud.'}`);
+    return;
+  }
+  
+  try {
+    renderFileBreadcrumb(path);
+    renderFileList(result.data.items || [], path);
+  } catch (error) {
+    showFilesError('Error al renderizar: ' + error.message);
+  }
 };
 
 const renderFileBreadcrumb = (path) => {
@@ -55,7 +85,7 @@ const renderFileBreadcrumb = (path) => {
   
   parts.forEach((part) => {
     acc += (acc ? '/' : '') + part;
-    html += ` <span class="crumb-sep">/</span> <span class="crumb" data-path="${escapeHtml(acc)}">${escapeHtml(part)}</span>`;
+    html += ` <span class="crumb-sep">/</span> <span class="crumb" data-path="${filesEsc(acc)}">${filesEsc(part)}</span>`;
   });
   
   bc.innerHTML = html;
@@ -72,7 +102,7 @@ const renderFileList = (items, path) => {
   if (path) {
     const parent = path.split('/').slice(0, -1).join('/');
     html += `
-      <div class="file-item" data-type="dir" data-path="${escapeHtml(parent)}">
+      <div class="file-item" data-type="dir" data-path="${filesEsc(parent)}">
         <span class="file-icon">⬆️</span>
         <span class="file-name">..</span>
         <span class="file-size"></span>
@@ -87,11 +117,11 @@ const renderFileList = (items, path) => {
   items.forEach(item => {
     const rel = path ? `${path}/${item.name}` : item.name;
     html += `
-      <div class="file-item" data-type="${item.type}" data-path="${escapeHtml(rel)}">
+      <div class="file-item" data-type="${item.type}" data-path="${filesEsc(rel)}">
         <span class="file-icon">${fileIcon(item)}</span>
-        <span class="file-name">${escapeHtml(item.name)}</span>
+        <span class="file-name">${filesEsc(item.name)}</span>
         <span class="file-size">${item.type === 'dir' ? '—' : formatFileSize(item.size)}</span>
-        <button class="btn btn-danger btn-sm file-delete" data-path="${escapeHtml(rel)}" data-type="${item.type}">🗑</button>
+        <button class="btn btn-danger btn-sm file-delete" data-path="${filesEsc(rel)}" data-type="${item.type}">🗑</button>
       </div>
     `;
   });
@@ -136,34 +166,42 @@ const formatFileSize = (bytes) => {
 };
 
 const openFileEditor = async (relPath) => {
-  const result = await apiFetch(`/servers/${fileServerId}/files/content?path=${encodeURIComponent(relPath)}`);
-  
-  if (!result || !result.ok) {
-    showNotification(result?.data?.error || 'No se pudo abrir el archivo', 'error');
-    return;
+  try {
+    const result = await apiFetch(`/servers/${fileServerId}/files/content?path=${encodeURIComponent(relPath)}`);
+    
+    if (!result || !result.ok) {
+      showNotification(result?.data?.error || 'No se pudo abrir el archivo', 'error');
+      return;
+    }
+    
+    editingFilePath = relPath;
+    document.getElementById('editorFileName').textContent = relPath;
+    document.getElementById('fileContent').value = result.data.content;
+    document.getElementById('fileEditor').style.display = 'flex';
+  } catch (error) {
+    showNotification('Error al abrir: ' + error.message, 'error');
   }
-  
-  editingFilePath = relPath;
-  document.getElementById('editorFileName').textContent = relPath;
-  document.getElementById('fileContent').value = result.data.content;
-  document.getElementById('fileEditor').style.display = 'flex';
 };
 
 const saveCurrentFile = async () => {
   if (!editingFilePath) return;
   
-  const content = document.getElementById('fileContent').value;
-  
-  const result = await apiFetch(`/servers/${fileServerId}/files/content`, {
-    method: 'PUT',
-    body: JSON.stringify({ path: editingFilePath, content })
-  });
-  
-  if (result && result.ok) {
-    showNotification('Archivo guardado ✅', 'success');
-    loadFileManager(currentFilePath);
-  } else {
-    showNotification(result?.data?.error || 'Error al guardar', 'error');
+  try {
+    const content = document.getElementById('fileContent').value;
+    
+    const result = await apiFetch(`/servers/${fileServerId}/files/content`, {
+      method: 'PUT',
+      body: JSON.stringify({ path: editingFilePath, content })
+    });
+    
+    if (result && result.ok) {
+      showNotification('Archivo guardado ✅', 'success');
+      loadFileManager(currentFilePath);
+    } else {
+      showNotification(result?.data?.error || 'Error al guardar', 'error');
+    }
+  } catch (error) {
+    showNotification('Error al guardar: ' + error.message, 'error');
   }
 };
 
@@ -174,30 +212,38 @@ const createFileItem = async (type) => {
   const cleanName = name.trim().replace(/[/\\]/g, '');
   const rel = currentFilePath ? `${currentFilePath}/${cleanName}` : cleanName;
   
-  const result = await apiFetch(`/servers/${fileServerId}/files/create`, {
-    method: 'POST',
-    body: JSON.stringify({ path: rel, type })
-  });
-  
-  if (result && result.ok) {
-    showNotification(type === 'dir' ? 'Carpeta creada 📁' : 'Archivo creado 📄', 'success');
-    loadFileManager(currentFilePath);
-  } else {
-    showNotification(result?.data?.error || 'Error al crear', 'error');
+  try {
+    const result = await apiFetch(`/servers/${fileServerId}/files/create`, {
+      method: 'POST',
+      body: JSON.stringify({ path: rel, type })
+    });
+    
+    if (result && result.ok) {
+      showNotification(type === 'dir' ? 'Carpeta creada 📁' : 'Archivo creado 📄', 'success');
+      loadFileManager(currentFilePath);
+    } else {
+      showNotification(result?.data?.error || 'Error al crear', 'error');
+    }
+  } catch (error) {
+    showNotification('Error al crear: ' + error.message, 'error');
   }
 };
 
 const deleteFileItem = async (relPath, type) => {
   if (!confirm(`¿Eliminar ${type === 'dir' ? 'la carpeta' : 'el archivo'} "${relPath}"? Esta acción no se puede deshacer.`)) return;
   
-  const result = await apiFetch(`/servers/${fileServerId}/files?path=${encodeURIComponent(relPath)}`, {
-    method: 'DELETE'
-  });
-  
-  if (result && result.ok) {
-    showNotification('Eliminado correctamente 🗑', 'success');
-    loadFileManager(currentFilePath);
-  } else {
-    showNotification(result?.data?.error || 'Error al eliminar', 'error');
+  try {
+    const result = await apiFetch(`/servers/${fileServerId}/files?path=${encodeURIComponent(relPath)}`, {
+      method: 'DELETE'
+    });
+    
+    if (result && result.ok) {
+      showNotification('Eliminado correctamente 🗑', 'success');
+      loadFileManager(currentFilePath);
+    } else {
+      showNotification(result?.data?.error || 'Error al eliminar', 'error');
+    }
+  } catch (error) {
+    showNotification('Error al eliminar: ' + error.message, 'error');
   }
 };
