@@ -190,23 +190,34 @@ const reinstall = async (serverId, repoUrl, nodeVersion, io) => {
   try {
     await db.query('UPDATE servers SET status = ? WHERE id = ?', ['installing', serverId]);
     await emit('📦 Iniciando reinstalación...');
+    
+    // 1. Limpiar y crear directorio
     await fs.rm(serverDir, { recursive: true, force: true });
     await fs.mkdir(serverDir, { recursive: true });
     
+    // 2. Clonar repositorio (usando '.' para clonar DIRECTO en el directorio actual)
     await emit(`📥 Clonando repositorio: ${repoUrl}`);
-    await runCommand('git', ['clone', '--depth', '1', repoUrl, serverDir], serverDir, io, serverId);
+    await runCommand('git', ['clone', '--depth', '1', repoUrl, '.'], serverDir, io, serverId);
     
+    // 3. Verificar e instalar dependencias
     if (language === 'python') {
       await emit('🐍 Instalando dependencias de Python...');
+      const reqPath = path.join(serverDir, 'requirements.txt');
       try {
-        await fs.access(path.join(serverDir, 'requirements.txt'));
+        await fs.access(reqPath);
+        await emit('✅ requirements.txt encontrado. Instalando con pip3...');
         await runCommand('pip3', ['install', '-r', 'requirements.txt'], serverDir, io, serverId);
       } catch {
-        await emit('⚠️ No se encontró requirements.txt, omitiendo instalación de Python.');
+        await emit('⚠️ No se encontró requirements.txt en el repositorio. Omitiendo instalación.');
       }
     } else {
       await emit('📦 Instalando dependencias (npm install)...');
-      await runCommand('npm', ['install', '--production'], serverDir, io, serverId);
+      try {
+        await fs.access(path.join(serverDir, 'package.json'));
+        await runCommand('npm', ['install', '--production'], serverDir, io, serverId);
+      } catch {
+        await emit('⚠️ No se encontró package.json. Omitiendo npm install.');
+      }
     }
     
     await db.query('UPDATE servers SET status = ? WHERE id = ?', ['stopped', serverId]);
