@@ -4,36 +4,24 @@ let serverData = null;
 
 document.addEventListener('DOMContentLoaded', () => {
   if (!requireAuth()) return;
-  
+
   const urlParams = new URLSearchParams(window.location.search);
   serverId = urlParams.get('id');
-  
+
   if (!serverId) {
     window.location.href = '/dashboard.html';
     return;
   }
-  
+
   loadServer();
   setupTabs();
   setupConsole();
   setupActions();
   setupStartupForm();
-  setupLanguageToggle();
   setupReinstall();
   setupDeleteModal();
   setupRenewModal();
 });
-
-const setupLanguageToggle = () => {
-  const languageSelect = document.getElementById('language');
-  const nodeVersionGroup = document.getElementById('nodeVersionGroup');
-  
-  if (languageSelect && nodeVersionGroup) {
-    languageSelect.addEventListener('change', () => {
-      nodeVersionGroup.style.display = languageSelect.value === 'python' ? 'none' : 'block';
-    });
-  }
-};
 
 const loadServer = async () => {
   const result = await apiFetch(`/servers/${serverId}`);
@@ -51,15 +39,14 @@ const updateServerUI = () => {
   document.getElementById('serverPlan').textContent = capitalizeFirst(serverData.plan);
   document.getElementById('serverExpires').textContent = formatDate(serverData.expires_at);
   document.getElementById('serverNode').textContent = `v${serverData.node_version}`;
-  document.getElementById('serverLanguage').textContent = serverData.language === 'python' ? 'Python 3' : 'Node.js';
   document.getElementById('serverRepo').textContent = serverData.repo_url || 'No configurado';
   document.getElementById('serverId').textContent = serverData.id;
   document.getElementById('serverCreated').textContent = formatDate(serverData.created_at);
   document.getElementById('serverCost').textContent = `${serverData.coins_cost} coins`;
-  
+
   const statusDot = document.getElementById('statusDot');
   const statusText = document.getElementById('serverStatus');
-  
+
   if (serverData.status === 'expired') {
     statusDot.className = 'status-dot expired';
     statusText.textContent = 'Expirado';
@@ -73,14 +60,10 @@ const updateServerUI = () => {
     statusDot.className = 'status-dot stopped';
     statusText.textContent = 'Detenido';
   }
-  
+
   if (serverData.repo_url) document.getElementById('repoUrl').value = serverData.repo_url;
   document.getElementById('nodeVersion').value = serverData.node_version;
-  document.getElementById('language').value = serverData.language || 'node';
-  
-  // Disparar el evento para ocultar/mostrar la versión de Node
-  document.getElementById('language').dispatchEvent(new Event('change'));
-  
+
   updateButtons();
 };
 
@@ -90,7 +73,7 @@ const updateButtons = () => {
   const restartBtn = document.getElementById('restartBtn');
   const consoleInput = document.getElementById('consoleInput');
   const sendCommand = document.getElementById('sendCommand');
-  
+
   if (serverData.isRunning) {
     startBtn.disabled = true;
     stopBtn.disabled = false;
@@ -109,25 +92,25 @@ const updateButtons = () => {
 const setupConsole = () => {
   socket = io({ auth: { token: getToken() } });
   const consoleOutput = document.getElementById('consoleOutput');
-  
+
   socket.on('connect', () => {
     socket.emit('join-console', serverId);
     addConsoleLine('✅ Conectado a la consola del servidor', 'info');
     loadConsoleHistory();
   });
-  
+
   socket.on('console-output', (message) => addConsoleLine(message));
   socket.on('connect_error', (error) => addConsoleLine(`❌ Error de conexión: ${error.message}`, 'error'));
   socket.on('disconnect', () => addConsoleLine('❌ Desconectado de la consola', 'error'));
-  
+
   document.getElementById('clearConsole').addEventListener('click', () => consoleOutput.innerHTML = '');
-  
+
   const consoleInput = document.getElementById('consoleInput');
   const sendCommandBtn = document.getElementById('sendCommand');
-  
+
   consoleInput.addEventListener('keypress', (e) => { if (e.key === 'Enter') sendCmd(); });
   sendCommandBtn.addEventListener('click', sendCmd);
-  
+
   function sendCmd() {
     const command = consoleInput.value.trim();
     if (command) {
@@ -193,27 +176,25 @@ const setupStartupForm = () => {
   const startupForm = document.getElementById('startupForm');
   const startupError = document.getElementById('startupError');
   const startupSuccess = document.getElementById('startupSuccess');
-  
+
   startupForm.addEventListener('submit', async (e) => {
     e.preventDefault();
     startupError.style.display = 'none';
     startupSuccess.style.display = 'none';
-    
+
     const repoUrl = document.getElementById('repoUrl').value.trim();
     const nodeVersion = document.getElementById('nodeVersion').value;
-    const language = document.getElementById('language').value;
-    
+
     const result = await apiFetch(`/servers/${serverId}/startup`, {
       method: 'PUT',
-      body: JSON.stringify({ repo_url: repoUrl, node_version: nodeVersion, language })
+      body: JSON.stringify({ repo_url: repoUrl, node_version: nodeVersion, language: 'node' })
     });
-    
+
     if (result && result.ok) {
       startupSuccess.textContent = 'Startup actualizado correctamente';
       startupSuccess.style.display = 'block';
       serverData.repo_url = repoUrl;
       serverData.node_version = nodeVersion;
-      serverData.language = language;
       updateServerUI();
     } else {
       startupError.textContent = result?.data?.error || 'Error al actualizar startup';
@@ -226,7 +207,7 @@ const setupReinstall = () => {
   const reinstallBtn = document.getElementById('reinstallBtn');
   const reinstallError = document.getElementById('reinstallError');
   const reinstallSuccess = document.getElementById('reinstallSuccess');
-  
+
   reinstallBtn.addEventListener('click', async () => {
     if (!serverData.repo_url) {
       reinstallError.textContent = 'Primero configura la URL del repositorio en Startup';
@@ -234,15 +215,15 @@ const setupReinstall = () => {
       return;
     }
     if (!confirm('¿Estás seguro de reinstalar? Se eliminarán todos los archivos actuales.')) return;
-    
+
     reinstallError.style.display = 'none';
     reinstallSuccess.style.display = 'none';
     reinstallBtn.disabled = true;
     reinstallBtn.textContent = 'Reinstalando...';
-    
+
     document.querySelector('[data-tab="console"]').click();
     const result = await apiFetch(`/servers/${serverId}/reinstall`, { method: 'POST' });
-    
+
     if (result && result.ok) {
       reinstallSuccess.textContent = 'Reinstalación iniciada. Revisa la consola.';
       reinstallSuccess.style.display = 'block';
@@ -262,12 +243,12 @@ const setupDeleteModal = () => {
   const cancelDelete = document.getElementById('cancelDelete');
   const confirmDelete = document.getElementById('confirmDelete');
   const deleteError = document.getElementById('deleteError');
-  
+
   deleteBtn.addEventListener('click', () => deleteModal.classList.add('active'));
   closeDeleteModal.addEventListener('click', () => deleteModal.classList.remove('active'));
   cancelDelete.addEventListener('click', () => deleteModal.classList.remove('active'));
   deleteModal.addEventListener('click', (e) => { if (e.target === deleteModal) deleteModal.classList.remove('active'); });
-  
+
   confirmDelete.addEventListener('click', async () => {
     confirmDelete.disabled = true;
     const result = await apiFetch(`/servers/${serverId}`, { method: 'DELETE' });
@@ -290,7 +271,7 @@ const setupRenewModal = () => {
   const confirmRenew = document.getElementById('confirmRenew');
   const renewError = document.getElementById('renewError');
   const renewSuccess = document.getElementById('renewSuccess');
-  
+
   renewBtn.addEventListener('click', async () => {
     renewModal.classList.add('active');
     const plansResult = await apiFetch('/servers/plans');
@@ -299,11 +280,11 @@ const setupRenewModal = () => {
       document.getElementById('renewCost').textContent = plan.coins;
     }
   });
-  
+
   closeRenewModal.addEventListener('click', () => renewModal.classList.remove('active'));
   cancelRenew.addEventListener('click', () => renewModal.classList.remove('active'));
   renewModal.addEventListener('click', (e) => { if (e.target === renewModal) renewModal.classList.remove('active'); });
-  
+
   confirmRenew.addEventListener('click', async () => {
     confirmRenew.disabled = true;
     renewError.style.display = 'none';
