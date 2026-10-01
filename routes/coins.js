@@ -116,39 +116,8 @@ router.post('/capture-order', authenticate, async (req, res) => {
   }
 });
 
-router.post('/webhook', async (req, res) => {
-  try {
-    const event = req.body;
-    
-    if (event.event_type === 'PAYMENT.CAPTURE.COMPLETED') {
-      const orderId = event.resource.id;
-      
-      const transactions = await db.query(
-        'SELECT * FROM transactions WHERE paypal_order_id = ? AND status = ?',
-        [orderId, 'pending']
-      );
-      
-      if (transactions.length > 0) {
-        const transaction = transactions[0];
-        
-        await db.query(
-          'UPDATE transactions SET status = ? WHERE id = ?',
-          ['completed', transaction.id]
-        );
-        
-        await db.query(
-          'UPDATE users SET coins = coins + ? WHERE id = ?',
-          [transaction.coins, transaction.user_id]
-        );
-        
-        console.log(`✅ Webhook: ${transaction.coins} coins agregados al usuario ${transaction.user_id}`);
-      }
-    }
-    
-    res.status(200).json({ status: 'OK' });
-  } catch (error) {
-    res.status(200).json({ status: 'OK' });
-  }
+router.post('/webhook', (req, res) => {
+  res.status(200).json({ status: 'OK' });
 });
 
 router.get('/transactions', authenticate, async (req, res) => {
