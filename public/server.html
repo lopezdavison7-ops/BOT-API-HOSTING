@@ -82,7 +82,7 @@
           <div class="tab-content" id="startup-tab">
             <div class="settings-card">
               <h3>Configuración de Startup</h3>
-              <p class="settings-description">Configura el repositorio Git y la versión de Node.js para tu bot (compatible con JavaScript y TypeScript).</p>
+              <p class="settings-description">Configura el repositorio Git y la versión de Node.js para tu bot (JavaScript o TypeScript).</p>
 
               <form id="startupForm">
                 <div class="form-group">
@@ -98,7 +98,7 @@
                     <option value="18">Node.js 18</option>
                     <option value="20" selected>Node.js 20 (Recomendado)</option>
                   </select>
-                  <small>Detecta automáticamente si tu proyecto usa JavaScript o TypeScript</small>
+                  <small>Detecta automáticamente JavaScript o TypeScript</small>
                 </div>
 
                 <div class="form-error" id="startupError"></div>
@@ -113,7 +113,7 @@
             <div class="settings-card">
               <h3>Reinstalación del Servidor</h3>
               <p class="settings-description">Reinstala tu bot desde el repositorio configurado. Esto eliminará todos los archivos actuales y clonará el repositorio nuevamente, ejecutando <code>npm install</code> automáticamente.</p>
-              <div class="warning-box"><strong>⚠️ Advertencia:</strong> Esta acción eliminará todos los archivos del servidor. Asegúrate de tener todo guardado en tu repositorio Git.</div>
+              <div class="warning-box"><strong>⚠️ Advertencia:</strong> Esta acción eliminará todos los archivos del servidor.</div>
               <div class="form-error" id="reinstallError"></div>
               <div class="form-success" id="reinstallSuccess"></div>
               <button class="btn btn-warning" id="reinstallBtn">🔄 Reinstalar Servidor</button>
