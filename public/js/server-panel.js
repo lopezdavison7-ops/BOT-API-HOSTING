@@ -18,20 +18,30 @@ document.addEventListener('DOMContentLoaded', () => {
   setupConsole();
   setupActions();
   setupStartupForm();
+  setupLanguageToggle();
   setupReinstall();
   setupDeleteModal();
   setupRenewModal();
 });
 
+const setupLanguageToggle = () => {
+  const languageSelect = document.getElementById('language');
+  const nodeVersionGroup = document.getElementById('nodeVersionGroup');
+  
+  if (languageSelect && nodeVersionGroup) {
+    languageSelect.addEventListener('change', () => {
+      nodeVersionGroup.style.display = languageSelect.value === 'python' ? 'none' : 'block';
+    });
+  }
+};
+
 const loadServer = async () => {
   const result = await apiFetch(`/servers/${serverId}`);
-  
   if (!result || !result.ok) {
     showNotification('Servidor no encontrado', 'error');
     setTimeout(() => window.location.href = '/dashboard.html', 1500);
     return;
   }
-  
   serverData = result.data.server;
   updateServerUI();
 };
@@ -41,6 +51,7 @@ const updateServerUI = () => {
   document.getElementById('serverPlan').textContent = capitalizeFirst(serverData.plan);
   document.getElementById('serverExpires').textContent = formatDate(serverData.expires_at);
   document.getElementById('serverNode').textContent = `v${serverData.node_version}`;
+  document.getElementById('serverLanguage').textContent = serverData.language === 'python' ? 'Python 3' : 'Node.js';
   document.getElementById('serverRepo').textContent = serverData.repo_url || 'No configurado';
   document.getElementById('serverId').textContent = serverData.id;
   document.getElementById('serverCreated').textContent = formatDate(serverData.created_at);
@@ -63,10 +74,12 @@ const updateServerUI = () => {
     statusText.textContent = 'Detenido';
   }
   
-  if (serverData.repo_url) {
-    document.getElementById('repoUrl').value = serverData.repo_url;
-  }
+  if (serverData.repo_url) document.getElementById('repoUrl').value = serverData.repo_url;
   document.getElementById('nodeVersion').value = serverData.node_version;
+  document.getElementById('language').value = serverData.language || 'node';
+  
+  // Disparar el evento para ocultar/mostrar la versión de Node
+  document.getElementById('language').dispatchEvent(new Event('change'));
   
   updateButtons();
 };
@@ -103,31 +116,16 @@ const setupConsole = () => {
     loadConsoleHistory();
   });
   
-  socket.on('console-output', (message) => {
-    addConsoleLine(message);
-  });
+  socket.on('console-output', (message) => addConsoleLine(message));
+  socket.on('connect_error', (error) => addConsoleLine(`❌ Error de conexión: ${error.message}`, 'error'));
+  socket.on('disconnect', () => addConsoleLine('❌ Desconectado de la consola', 'error'));
   
-  socket.on('connect_error', (error) => {
-    addConsoleLine(`❌ Error de conexión con la consola: ${error.message}`, 'error');
-  });
-  
-  socket.on('disconnect', () => {
-    addConsoleLine('❌ Desconectado de la consola', 'error');
-  });
-  
-  document.getElementById('clearConsole').addEventListener('click', () => {
-    consoleOutput.innerHTML = '';
-  });
+  document.getElementById('clearConsole').addEventListener('click', () => consoleOutput.innerHTML = '');
   
   const consoleInput = document.getElementById('consoleInput');
   const sendCommandBtn = document.getElementById('sendCommand');
   
-  consoleInput.addEventListener('keypress', (e) => {
-    if (e.key === 'Enter') {
-      sendCmd();
-    }
-  });
-  
+  consoleInput.addEventListener('keypress', (e) => { if (e.key === 'Enter') sendCmd(); });
   sendCommandBtn.addEventListener('click', sendCmd);
   
   function sendCmd() {
@@ -151,38 +149,24 @@ const addConsoleLine = (message, type = '') => {
 
 const loadConsoleHistory = async () => {
   const result = await apiFetch(`/servers/${serverId}/console`);
-  
   if (result && result.ok) {
     const logs = result.data.logs;
     const consoleOutput = document.getElementById('consoleOutput');
     consoleOutput.innerHTML = '';
-    
-    logs.forEach(log => {
-      addConsoleLine(log);
-    });
+    logs.forEach(log => addConsoleLine(log));
   }
 };
 
 const setupActions = () => {
-  document.getElementById('startBtn').addEventListener('click', async () => {
-    await serverAction('start');
-  });
-  
-  document.getElementById('stopBtn').addEventListener('click', async () => {
-    await serverAction('stop');
-  });
-  
-  document.getElementById('restartBtn').addEventListener('click', async () => {
-    await serverAction('restart');
-  });
+  document.getElementById('startBtn').addEventListener('click', async () => await serverAction('start'));
+  document.getElementById('stopBtn').addEventListener('click', async () => await serverAction('stop'));
+  document.getElementById('restartBtn').addEventListener('click', async () => await serverAction('restart'));
 };
 
 const serverAction = async (action) => {
   const btn = document.getElementById(`${action}Btn`);
   btn.disabled = true;
-  
   const result = await apiFetch(`/servers/${serverId}/${action}`, { method: 'POST' });
-  
   if (result && result.ok) {
     showNotification(`Servidor ${action === 'start' ? 'iniciado' : action === 'stop' ? 'detenido' : 'reiniciado'}`, 'success');
     setTimeout(loadServer, 1000);
@@ -195,12 +179,10 @@ const serverAction = async (action) => {
 const setupTabs = () => {
   const tabs = document.querySelectorAll('.tab');
   const tabContents = document.querySelectorAll('.tab-content');
-  
   tabs.forEach(tab => {
     tab.addEventListener('click', () => {
       tabs.forEach(t => t.classList.remove('active'));
       tabContents.forEach(tc => tc.classList.remove('active'));
-      
       tab.classList.add('active');
       document.getElementById(`${tab.dataset.tab}-tab`).classList.add('active');
     });
@@ -214,16 +196,16 @@ const setupStartupForm = () => {
   
   startupForm.addEventListener('submit', async (e) => {
     e.preventDefault();
-    
     startupError.style.display = 'none';
     startupSuccess.style.display = 'none';
     
     const repoUrl = document.getElementById('repoUrl').value.trim();
     const nodeVersion = document.getElementById('nodeVersion').value;
+    const language = document.getElementById('language').value;
     
     const result = await apiFetch(`/servers/${serverId}/startup`, {
       method: 'PUT',
-      body: JSON.stringify({ repo_url: repoUrl, node_version: nodeVersion })
+      body: JSON.stringify({ repo_url: repoUrl, node_version: nodeVersion, language })
     });
     
     if (result && result.ok) {
@@ -231,6 +213,7 @@ const setupStartupForm = () => {
       startupSuccess.style.display = 'block';
       serverData.repo_url = repoUrl;
       serverData.node_version = nodeVersion;
+      serverData.language = language;
       updateServerUI();
     } else {
       startupError.textContent = result?.data?.error || 'Error al actualizar startup';
@@ -250,10 +233,7 @@ const setupReinstall = () => {
       reinstallError.style.display = 'block';
       return;
     }
-    
-    if (!confirm('¿Estás seguro de reinstalar? Se eliminarán todos los archivos actuales.')) {
-      return;
-    }
+    if (!confirm('¿Estás seguro de reinstalar? Se eliminarán todos los archivos actuales.')) return;
     
     reinstallError.style.display = 'none';
     reinstallSuccess.style.display = 'none';
@@ -261,7 +241,6 @@ const setupReinstall = () => {
     reinstallBtn.textContent = 'Reinstalando...';
     
     document.querySelector('[data-tab="console"]').click();
-    
     const result = await apiFetch(`/servers/${serverId}/reinstall`, { method: 'POST' });
     
     if (result && result.ok) {
@@ -271,7 +250,6 @@ const setupReinstall = () => {
       reinstallError.textContent = result?.data?.error || 'Error al reinstalar';
       reinstallError.style.display = 'block';
     }
-    
     reinstallBtn.disabled = false;
     reinstallBtn.textContent = '🔄 Reinstalar Servidor';
   });
@@ -285,22 +263,14 @@ const setupDeleteModal = () => {
   const confirmDelete = document.getElementById('confirmDelete');
   const deleteError = document.getElementById('deleteError');
   
-  deleteBtn.addEventListener('click', () => {
-    deleteModal.classList.add('active');
-  });
-  
+  deleteBtn.addEventListener('click', () => deleteModal.classList.add('active'));
   closeDeleteModal.addEventListener('click', () => deleteModal.classList.remove('active'));
   cancelDelete.addEventListener('click', () => deleteModal.classList.remove('active'));
-  
-  deleteModal.addEventListener('click', (e) => {
-    if (e.target === deleteModal) deleteModal.classList.remove('active');
-  });
+  deleteModal.addEventListener('click', (e) => { if (e.target === deleteModal) deleteModal.classList.remove('active'); });
   
   confirmDelete.addEventListener('click', async () => {
     confirmDelete.disabled = true;
-    
     const result = await apiFetch(`/servers/${serverId}`, { method: 'DELETE' });
-    
     if (result && result.ok) {
       showNotification('Servidor eliminado', 'success');
       setTimeout(() => window.location.href = '/dashboard.html', 1000);
@@ -323,7 +293,6 @@ const setupRenewModal = () => {
   
   renewBtn.addEventListener('click', async () => {
     renewModal.classList.add('active');
-    
     const plansResult = await apiFetch('/servers/plans');
     if (plansResult && plansResult.ok) {
       const plan = plansResult.data.plans[serverData.plan];
@@ -333,35 +302,23 @@ const setupRenewModal = () => {
   
   closeRenewModal.addEventListener('click', () => renewModal.classList.remove('active'));
   cancelRenew.addEventListener('click', () => renewModal.classList.remove('active'));
-  
-  renewModal.addEventListener('click', (e) => {
-    if (e.target === renewModal) renewModal.classList.remove('active');
-  });
+  renewModal.addEventListener('click', (e) => { if (e.target === renewModal) renewModal.classList.remove('active'); });
   
   confirmRenew.addEventListener('click', async () => {
     confirmRenew.disabled = true;
     renewError.style.display = 'none';
     renewSuccess.style.display = 'none';
-    
     const result = await apiFetch(`/servers/${serverId}/renew`, { method: 'POST' });
-    
     if (result && result.ok) {
       renewSuccess.textContent = 'Servidor renovado exitosamente';
       renewSuccess.style.display = 'block';
-      setTimeout(() => {
-        renewModal.classList.remove('active');
-        loadServer();
-        initUserUI();
-      }, 1500);
+      setTimeout(() => { renewModal.classList.remove('active'); loadServer(); initUserUI(); }, 1500);
     } else {
       renewError.textContent = result?.data?.error || 'Error al renovar';
       renewError.style.display = 'block';
     }
-    
     confirmRenew.disabled = false;
   });
 };
 
-const capitalizeFirst = (str) => {
-  return str.charAt(0).toUpperCase() + str.slice(1);
-};
+const capitalizeFirst = (str) => str.charAt(0).toUpperCase() + str.slice(1);
