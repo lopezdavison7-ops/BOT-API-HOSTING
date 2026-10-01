@@ -18,22 +18,12 @@
         </div>
       </div>
       <nav class="sidebar-nav">
-        <a href="/dashboard.html" class="nav-item">
-          <span class="nav-icon">📊</span> Dashboard
-        </a>
-        <a href="/coins.html" class="nav-item">
-          <span class="nav-icon">💰</span> Coins
-        </a>
-        <a href="#" class="nav-item" id="profileLink">
-          <span class="nav-icon">👤</span> Perfil
-        </a>
-        <a href="#" class="nav-item" id="logoutBtn">
-          <span class="nav-icon">🚪</span> Cerrar Sesión
-        </a>
+        <a href="/dashboard.html" class="nav-item"><span class="nav-icon">📊</span> Dashboard</a>
+        <a href="/coins.html" class="nav-item"><span class="nav-icon">💰</span> Coins</a>
+        <a href="#" class="nav-item" id="profileLink"><span class="nav-icon">👤</span> Perfil</a>
+        <a href="#" class="nav-item" id="logoutBtn"><span class="nav-icon"></span> Cerrar Sesión</a>
       </nav>
-      <div class="sidebar-footer">
-        <p>Powered by <strong>Alex Aguilar Gutiérrez</strong></p>
-      </div>
+      <div class="sidebar-footer"><p>Powered by <strong>Alex Aguilar Gutiérrez</strong></p></div>
     </aside>
 
     <main class="main-content">
@@ -43,46 +33,27 @@
           <h1 id="serverName">Servidor</h1>
         </div>
         <div class="top-bar-right">
-          <div class="user-coins">
-            <span class="coin-icon">🪙</span>
-            <span id="userCoins">0</span> coins
-          </div>
-          <div class="user-info">
-            <span id="userName">Usuario</span>
-          </div>
+          <div class="user-coins"><span class="coin-icon">🪙</span><span id="userCoins">0</span> coins</div>
+          <div class="user-info"><span id="userName">Usuario</span></div>
         </div>
       </header>
 
       <div class="content-area">
         <div class="server-info-card">
           <div class="server-info-header">
-            <div class="server-status">
-              <span class="status-dot" id="statusDot"></span>
-              <span id="serverStatus">Detenido</span>
-            </div>
+            <div class="server-status"><span class="status-dot" id="statusDot"></span><span id="serverStatus">Detenido</span></div>
             <div class="server-actions">
               <button class="btn btn-success" id="startBtn">▶ Iniciar</button>
-              <button class="btn btn-warning" id="restartBtn">🔄 Reiniciar</button>
+              <button class="btn btn-warning" id="restartBtn"> Reiniciar</button>
               <button class="btn btn-danger" id="stopBtn">⏹ Detener</button>
             </div>
           </div>
           <div class="server-info-grid">
-            <div class="info-item">
-              <span class="info-label">Plan:</span>
-              <span class="info-value" id="serverPlan">-</span>
-            </div>
-            <div class="info-item">
-              <span class="info-label">Vence:</span>
-              <span class="info-value" id="serverExpires">-</span>
-            </div>
-            <div class="info-item">
-              <span class="info-label">Node.js:</span>
-              <span class="info-value" id="serverNode">-</span>
-            </div>
-            <div class="info-item">
-              <span class="info-label">Repositorio:</span>
-              <span class="info-value" id="serverRepo">No configurado</span>
-            </div>
+            <div class="info-item"><span class="info-label">Plan:</span><span class="info-value" id="serverPlan">-</span></div>
+            <div class="info-item"><span class="info-label">Vence:</span><span class="info-value" id="serverExpires">-</span></div>
+            <div class="info-item"><span class="info-label">Lenguaje:</span><span class="info-value" id="serverLanguage">-</span></div>
+            <div class="info-item"><span class="info-label">Node.js:</span><span class="info-value" id="serverNode">-</span></div>
+            <div class="info-item" style="grid-column: span 2;"><span class="info-label">Repositorio:</span><span class="info-value" id="serverRepo">No configurado</span></div>
           </div>
           <div class="server-info-actions">
             <button class="btn btn-outline btn-sm" id="renewBtn">🔄 Renovar</button>
@@ -93,20 +64,15 @@
         <div class="tabs-container">
           <div class="tabs">
             <button class="tab active" data-tab="console">💻 Consola</button>
-            <button class="tab" data-tab="startup">⚙️ Startup</button>
+            <button class="tab" data-tab="startup">️ Startup</button>
             <button class="tab" data-tab="settings">🔧 Settings</button>
             <button class="tab" data-tab="files">📁 Archivos</button>
           </div>
 
           <div class="tab-content active" id="console-tab">
             <div class="console-container">
-              <div class="console-header">
-                <span>Consola en Vivo</span>
-                <button class="btn btn-outline btn-sm" id="clearConsole">Limpiar</button>
-              </div>
-              <div class="console-output" id="consoleOutput">
-                <div class="console-line info">Conectando a la consola...</div>
-              </div>
+              <div class="console-header"><span>Consola en Vivo</span><button class="btn btn-outline btn-sm" id="clearConsole">Limpiar</button></div>
+              <div class="console-output" id="consoleOutput"><div class="console-line info">Conectando a la consola...</div></div>
               <div class="console-input-container">
                 <input type="text" id="consoleInput" placeholder="Escribe un comando y presiona Enter..." disabled>
                 <button class="btn btn-primary" id="sendCommand" disabled>Enviar</button>
@@ -117,7 +83,7 @@
           <div class="tab-content" id="startup-tab">
             <div class="settings-card">
               <h3>Configuración de Startup</h3>
-              <p class="settings-description">Configura el repositorio Git y la versión de Node.js para tu bot.</p>
+              <p class="settings-description">Configura el repositorio Git, el lenguaje y la versión para tu bot.</p>
               
               <form id="startupForm">
                 <div class="form-group">
@@ -127,8 +93,16 @@
                 </div>
 
                 <div class="form-group">
+                  <label for="language">Lenguaje de Programación</label>
+                  <select id="language" required>
+                    <option value="node" selected>Node.js (JavaScript / TypeScript)</option>
+                    <option value="python">Python 3</option>
+                  </select>
+                </div>
+
+                <div class="form-group" id="nodeVersionGroup">
                   <label for="nodeVersion">Versión de Node.js</label>
-                  <select id="nodeVersion" required>
+                  <select id="nodeVersion">
                     <option value="16">Node.js 16</option>
                     <option value="18">Node.js 18</option>
                     <option value="20" selected>Node.js 20 (Recomendado)</option>
@@ -146,37 +120,18 @@
           <div class="tab-content" id="settings-tab">
             <div class="settings-card">
               <h3>Reinstalación del Servidor</h3>
-              <p class="settings-description">
-                Reinstala tu bot desde el repositorio configurado. Esto eliminará todos los archivos 
-                actuales y clonará el repositorio nuevamente, ejecutando <code>npm install</code> automáticamente.
-              </p>
-              
-              <div class="warning-box">
-                <strong>⚠️ Advertencia:</strong> Esta acción eliminará todos los archivos del servidor. 
-                Asegúrate de tener todo guardado en tu repositorio Git.
-              </div>
-
+              <p class="settings-description">Reinstala tu bot desde el repositorio configurado. Esto eliminará todos los archivos actuales y clonará el repositorio nuevamente, ejecutando <code>npm install</code> o <code>pip install</code> automáticamente.</p>
+              <div class="warning-box"><strong>️ Advertencia:</strong> Esta acción eliminará todos los archivos del servidor.</div>
               <div class="form-error" id="reinstallError"></div>
               <div class="form-success" id="reinstallSuccess"></div>
-
               <button class="btn btn-warning" id="reinstallBtn">🔄 Reinstalar Servidor</button>
             </div>
-
             <div class="settings-card">
               <h3>Información del Servidor</h3>
               <div class="info-grid">
-                <div class="info-row">
-                  <span class="info-label">ID del Servidor:</span>
-                  <span class="info-value" id="serverId">-</span>
-                </div>
-                <div class="info-row">
-                  <span class="info-label">Creado:</span>
-                  <span class="info-value" id="serverCreated">-</span>
-                </div>
-                <div class="info-row">
-                  <span class="info-label">Costo:</span>
-                  <span class="info-value" id="serverCost">-</span>
-                </div>
+                <div class="info-row"><span class="info-label">ID del Servidor:</span><span class="info-value" id="serverId">-</span></div>
+                <div class="info-row"><span class="info-label">Creado:</span><span class="info-value" id="serverCreated">-</span></div>
+                <div class="info-row"><span class="info-label">Costo:</span><span class="info-value" id="serverCost">-</span></div>
               </div>
             </div>
           </div>
@@ -190,9 +145,7 @@
                 <button class="btn btn-outline btn-sm" id="refreshFilesBtn">🔄</button>
               </div>
             </div>
-            <div class="file-list" id="fileList">
-              <div class="loading-spinner">Cargando archivos...</div>
-            </div>
+            <div class="file-list" id="fileList"><div class="loading-spinner">Cargando archivos...</div></div>
             <div class="file-editor" id="fileEditor" style="display:none;">
               <div class="file-editor-header">
                 <span id="editorFileName">archivo.js</span>
@@ -211,10 +164,7 @@
 
   <div class="modal" id="deleteModal">
     <div class="modal-content modal-sm">
-      <div class="modal-header">
-        <h2>Eliminar Servidor</h2>
-        <button class="modal-close" id="closeDeleteModal">&times;</button>
-      </div>
+      <div class="modal-header"><h2>Eliminar Servidor</h2><button class="modal-close" id="closeDeleteModal">&times;</button></div>
       <div class="modal-body">
         <p>¿Estás seguro de que quieres eliminar este servidor? Esta acción no se puede deshacer.</p>
         <div class="form-error" id="deleteError"></div>
@@ -228,10 +178,7 @@
 
   <div class="modal" id="renewModal">
     <div class="modal-content modal-sm">
-      <div class="modal-header">
-        <h2>Renovar Servidor</h2>
-        <button class="modal-close" id="closeRenewModal">&times;</button>
-      </div>
+      <div class="modal-header"><h2>Renovar Servidor</h2><button class="modal-close" id="closeRenewModal">&times;</button></div>
       <div class="modal-body">
         <p>Renovar este servidor por 30 días más.</p>
         <p><strong>Costo:</strong> <span id="renewCost">0</span> coins</p>
