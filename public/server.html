@@ -21,7 +21,7 @@
         <a href="/dashboard.html" class="nav-item"><span class="nav-icon">📊</span> Dashboard</a>
         <a href="/coins.html" class="nav-item"><span class="nav-icon">💰</span> Coins</a>
         <a href="#" class="nav-item" id="profileLink"><span class="nav-icon">👤</span> Perfil</a>
-        <a href="#" class="nav-item" id="logoutBtn"><span class="nav-icon"></span> Cerrar Sesión</a>
+        <a href="#" class="nav-item" id="logoutBtn"><span class="nav-icon">🚪</span> Cerrar Sesión</a>
       </nav>
       <div class="sidebar-footer"><p>Powered by <strong>Alex Aguilar Gutiérrez</strong></p></div>
     </aside>
@@ -44,14 +44,13 @@
             <div class="server-status"><span class="status-dot" id="statusDot"></span><span id="serverStatus">Detenido</span></div>
             <div class="server-actions">
               <button class="btn btn-success" id="startBtn">▶ Iniciar</button>
-              <button class="btn btn-warning" id="restartBtn"> Reiniciar</button>
+              <button class="btn btn-warning" id="restartBtn">🔄 Reiniciar</button>
               <button class="btn btn-danger" id="stopBtn">⏹ Detener</button>
             </div>
           </div>
           <div class="server-info-grid">
             <div class="info-item"><span class="info-label">Plan:</span><span class="info-value" id="serverPlan">-</span></div>
             <div class="info-item"><span class="info-label">Vence:</span><span class="info-value" id="serverExpires">-</span></div>
-            <div class="info-item"><span class="info-label">Lenguaje:</span><span class="info-value" id="serverLanguage">-</span></div>
             <div class="info-item"><span class="info-label">Node.js:</span><span class="info-value" id="serverNode">-</span></div>
             <div class="info-item" style="grid-column: span 2;"><span class="info-label">Repositorio:</span><span class="info-value" id="serverRepo">No configurado</span></div>
           </div>
@@ -64,7 +63,7 @@
         <div class="tabs-container">
           <div class="tabs">
             <button class="tab active" data-tab="console">💻 Consola</button>
-            <button class="tab" data-tab="startup">️ Startup</button>
+            <button class="tab" data-tab="startup">⚙️ Startup</button>
             <button class="tab" data-tab="settings">🔧 Settings</button>
             <button class="tab" data-tab="files">📁 Archivos</button>
           </div>
@@ -83,8 +82,8 @@
           <div class="tab-content" id="startup-tab">
             <div class="settings-card">
               <h3>Configuración de Startup</h3>
-              <p class="settings-description">Configura el repositorio Git, el lenguaje y la versión para tu bot.</p>
-              
+              <p class="settings-description">Configura el repositorio Git y la versión de Node.js para tu bot (compatible con JavaScript y TypeScript).</p>
+
               <form id="startupForm">
                 <div class="form-group">
                   <label for="repoUrl">URL del Repositorio (Git)</label>
@@ -93,20 +92,13 @@
                 </div>
 
                 <div class="form-group">
-                  <label for="language">Lenguaje de Programación</label>
-                  <select id="language" required>
-                    <option value="node" selected>Node.js (JavaScript / TypeScript)</option>
-                    <option value="python">Python 3</option>
-                  </select>
-                </div>
-
-                <div class="form-group" id="nodeVersionGroup">
                   <label for="nodeVersion">Versión de Node.js</label>
                   <select id="nodeVersion">
                     <option value="16">Node.js 16</option>
                     <option value="18">Node.js 18</option>
                     <option value="20" selected>Node.js 20 (Recomendado)</option>
                   </select>
+                  <small>Detecta automáticamente si tu proyecto usa JavaScript o TypeScript</small>
                 </div>
 
                 <div class="form-error" id="startupError"></div>
@@ -120,8 +112,8 @@
           <div class="tab-content" id="settings-tab">
             <div class="settings-card">
               <h3>Reinstalación del Servidor</h3>
-              <p class="settings-description">Reinstala tu bot desde el repositorio configurado. Esto eliminará todos los archivos actuales y clonará el repositorio nuevamente, ejecutando <code>npm install</code> o <code>pip install</code> automáticamente.</p>
-              <div class="warning-box"><strong>️ Advertencia:</strong> Esta acción eliminará todos los archivos del servidor.</div>
+              <p class="settings-description">Reinstala tu bot desde el repositorio configurado. Esto eliminará todos los archivos actuales y clonará el repositorio nuevamente, ejecutando <code>npm install</code> automáticamente.</p>
+              <div class="warning-box"><strong>⚠️ Advertencia:</strong> Esta acción eliminará todos los archivos del servidor. Asegúrate de tener todo guardado en tu repositorio Git.</div>
               <div class="form-error" id="reinstallError"></div>
               <div class="form-success" id="reinstallSuccess"></div>
               <button class="btn btn-warning" id="reinstallBtn">🔄 Reinstalar Servidor</button>
