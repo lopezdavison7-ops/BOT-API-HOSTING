@@ -28,9 +28,9 @@ const addLog = (serverId, message) => {
 };
 
 const buildSafeEnv = (serverDir) => ({
-  PATH: `/usr/local/bin:/usr/bin:/bin`,
-  HOME: process.env.HOME || '/home/container',
-  TMPDIR: '/tmp',
+  PATH: process.env.PATH || '/usr/local/bin:/usr/bin:/bin',
+  HOME: serverDir,
+  TMPDIR: serverDir,
   NODE_ENV: 'production',
   LANG: 'C.UTF-8',
   TERM: 'xterm',
@@ -53,7 +53,7 @@ const deleteServerDirectory = async (serverId) => {
 
 const isRunning = (serverId) => runningProcesses.has(serverId);
 
-const detectMainFile = async (serverDir, language) => {
+const detectMainFile = async (serverDir) => {
   try {
     const pkg = JSON.parse(await fs.readFile(path.join(serverDir, 'package.json'), 'utf8'));
     if (pkg.main && typeof pkg.main === 'string') {
@@ -63,75 +63,62 @@ const detectMainFile = async (serverDir, language) => {
       } catch {}
     }
   } catch {}
-  const nodeCandidates = ['index.js', 'main.js', 'app.js', 'bot.js', 'server.js', 'src/index.js', 'src/main.js', 'index.ts', 'bot.ts'];
-  const pythonCandidates = ['main.py', 'bot.py', 'app.py', 'index.py'];
-  const candidates = language === 'python' ? pythonCandidates : nodeCandidates;
+  const candidates = ['index.js', 'main.js', 'app.js', 'bot.js', 'server.js', 'src/index.js', 'src/main.js', 'index.ts', 'bot.ts'];
   for (const candidate of candidates) {
     try {
       await fs.access(path.join(serverDir, candidate));
       return candidate;
     } catch {}
   }
-  return language === 'python' ? 'main.py' : 'index.js';
+  return 'index.js';
 };
 
 const startServer = async (serverId, nodeVersion, io) => {
   if (isRunning(serverId)) throw new Error('El servidor ya está corriendo');
   const serverDir = path.join(BOTS_DIR, serverId);
-  const rows = await db.query('SELECT language FROM servers WHERE id = ?', [serverId]);
-  const language = rows.length > 0 ? rows[0].language : 'node';
-  const memLimit = MEM_LIMITS[(await db.query('SELECT plan FROM servers WHERE id = ?', [serverId]))[0]?.plan] || 512;
-  
+  const rows = await db.query('SELECT plan FROM servers WHERE id = ?', [serverId]);
+  const memLimit = MEM_LIMITS[rows[0]?.plan] || 512;
+
   let files = [];
   try { files = await fs.readdir(serverDir); } catch {}
-  
+
   const emit = async (message) => {
     if (io) io.to(`console-${serverId}`).emit('console-output', message);
     await addLog(serverId, message);
   };
-  
-  if (language === 'node' && !files.includes('package.json')) {
-    await emit('❌ Error: No se encontró package.json.');
+
+  if (!files.includes('package.json')) {
+    await emit('❌ Error: No se encontró package.json. Configura el repositorio y haz Reinstall.');
     throw new Error('package.json no encontrado');
   }
-  
-  const mainFile = await detectMainFile(serverDir, language);
+
+  const mainFile = await detectMainFile(serverDir);
   let execCmd = 'node';
-  let execArgs = [mainFile];
-  
-  if (language === 'python') {
-    // Usar el Python del entorno virtual
-    const venvPython = path.join(serverDir, 'venv', 'bin', 'python3');
-    try {
-      await fs.access(venvPython);
-      execCmd = venvPython;
-      execArgs = [mainFile];
-      await emit('✅ Usando entorno virtual de Python');
-    } catch {
-      await emit('⚠️ Entorno virtual no encontrado, reinstala el servidor');
-      throw new Error('Entorno virtual no encontrado');
-    }
-  } else if (mainFile.endsWith('.ts')) {
+  let execArgs = [`--max-old-space-size=${memLimit}`, mainFile];
+
+  if (mainFile.endsWith('.ts')) {
     execCmd = 'npx';
-    execArgs = ['ts-node', mainFile];
+    execArgs = [`--max-old-space-size=${memLimit}`, 'ts-node', mainFile];
   }
-  
-  await emit(`🚀 Iniciando servidor (${language === 'python' ? 'Python 3' : `Node ${nodeVersion || '20'}`})...`);
+
+  await emit(`🚀 Iniciando servidor (Node ${nodeVersion || '20'})...`);
   await emit(`📄 Archivo principal detectado: ${mainFile}`);
-  await emit(`🛡️ Entorno aislado | Límite de RAM: ${language === 'node' ? memLimit + 'MB' : 'N/A (Python)'}`);
-  
-  const ramArgs = language === 'node' ? [`--max-old-space-size=${memLimit}`] : [];
-  const proc = spawn(execCmd, [...ramArgs, ...execArgs], {
-    cwd: serverDir, env: buildSafeEnv(serverDir), shell: false
+  await emit(`🛡️ Entorno aislado | Límite de RAM: ${memLimit}MB`);
+
+  const proc = spawn(execCmd, execArgs, {
+    cwd: serverDir,
+    env: buildSafeEnv(serverDir),
+    shell: false
   });
-  
+
   runningProcesses.set(serverId, proc);
   proc.stdout.on('data', (data) => emit(data.toString()));
   proc.stderr.on('data', (data) => emit(`❌ ${data.toString()}`));
   proc.on('close', async (code, signal) => {
     runningProcesses.delete(serverId);
-    if (proc.__stopping) await emit('🛑 Servidor detenido manualmente.');
-    else {
+    if (proc.__stopping) {
+      await emit('🛑 Servidor detenido manualmente.');
+    } else {
       await emit(`🛑 Servidor detenido (código: ${code}${signal ? `, señal: ${signal}` : ''})`);
       if (code !== 0) await emit('💡 El bot cerró por su cuenta. Revisa los mensajes ❌ de arriba.');
     }
@@ -178,67 +165,24 @@ const sendCommand = (serverId, command) => {
 
 const reinstall = async (serverId, repoUrl, nodeVersion, io) => {
   const serverDir = path.join(BOTS_DIR, serverId);
-  const rows = await db.query('SELECT language FROM servers WHERE id = ?', [serverId]);
-  const language = rows.length > 0 ? rows[0].language : 'node';
-  
   const emit = async (message) => {
     if (io) io.to(`console-${serverId}`).emit('console-output', message);
     await addLog(serverId, message);
   };
-  
+
   try {
     await db.query('UPDATE servers SET status = ? WHERE id = ?', ['installing', serverId]);
     await emit('📦 Iniciando reinstalación...');
-    
+
     await fs.rm(serverDir, { recursive: true, force: true });
     await fs.mkdir(serverDir, { recursive: true });
-    
+
     await emit(`📥 Clonando repositorio: ${repoUrl}`);
     await runCommand('git', ['clone', '--depth', '1', repoUrl, '.'], serverDir, io, serverId);
-    
-    if (language === 'python') {
-      // Crear entorno virtual
-      await emit('🐍 Creando entorno virtual de Python...');
-      await runCommand('python3', ['-m', 'venv', 'venv'], serverDir, io, serverId);
-      
-      const venvPython = path.join(serverDir, 'venv', 'bin', 'python3');
-      const venvPip = path.join(serverDir, 'venv', 'bin', 'pip');
-      
-      await emit('🔧 Actualizando pip en el entorno virtual...');
-      await runCommand(venvPython, ['-m', 'pip', 'install', '--upgrade', 'pip'], serverDir, io, serverId);
-      
-      await emit('🔧 Instalando WAeys (WhatsApp library) desde GitHub...');
-      const tmpWaeys = '/tmp/waeys-install-' + serverId.slice(0, 8);
-      try {
-        await runCommand('git', ['clone', '--depth', '1', 'https://github.com/toZyn/WAeys.git', tmpWaeys], serverDir, io, serverId);
-        await runCommand(venvPython, ['-m', 'pip', 'install', tmpWaeys], serverDir, io, serverId);
-        await emit('✅ WAeys instalado correctamente');
-      } catch (e) {
-        await emit(`⚠️ Error al instalar WAeys: ${e.message}`);
-      } finally {
-        try { await fs.rm(tmpWaeys, { recursive: true, force: true }); } catch {}
-      }
-      
-      await emit('🐍 Instalando dependencias del proyecto...');
-      try {
-        await fs.access(path.join(serverDir, 'requirements.txt'));
-        await runCommand(venvPython, ['-m', 'pip', 'install', '-r', 'requirements.txt'], serverDir, io, serverId);
-        await emit('✅ Dependencias instaladas');
-      } catch {
-        await emit('ℹ️ No se encontró requirements.txt');
-      }
-      
-      await emit('✅ Entorno virtual configurado correctamente');
-    } else {
-      await emit('📦 Instalando dependencias (npm install)...');
-      try {
-        await fs.access(path.join(serverDir, 'package.json'));
-        await runCommand('npm', ['install', '--production'], serverDir, io, serverId);
-      } catch {
-        await emit('⚠️ No se encontró package.json.');
-      }
-    }
-    
+
+    await emit('📦 Instalando dependencias (npm install)...');
+    await runCommand('npm', ['install', '--production'], serverDir, io, serverId);
+
     await db.query('UPDATE servers SET status = ? WHERE id = ?', ['stopped', serverId]);
     await emit('✅ Reinstalación completada. Puedes iniciar tu servidor.');
   } catch (error) {
