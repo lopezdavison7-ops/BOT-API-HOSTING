@@ -8,6 +8,13 @@ const runningProcesses = new Map();
 const logQueues = new Map();
 const BOTS_DIR = path.join(__dirname, '..', 'bots');
 
+const MEM_LIMITS = {
+  basico: 256,
+  estandar: 512,
+  pro: 1024,
+  ultra: 2048
+};
+
 const initialize = async () => {
   try {
     await fs.mkdir(BOTS_DIR, { recursive: true });
@@ -27,6 +34,18 @@ const addLog = (serverId, message) => {
   ).catch((error) => console.error('Error al guardar log:', error));
   logQueues.set(serverId, next);
   return next;
+};
+
+const buildSafeEnv = (serverDir) => {
+  return {
+    PATH: process.env.PATH || '/usr/local/bin:/usr/bin:/bin',
+    HOME: serverDir,
+    TMPDIR: serverDir,
+    NODE_ENV: 'production',
+    LANG: 'C.UTF-8',
+    TERM: 'xterm',
+    BOT_DIR: serverDir
+  };
 };
 
 const createServerDirectory = async (serverId) => {
@@ -100,12 +119,17 @@ const startServer = async (serverId, nodeVersion, io) => {
     throw new Error('Archivo de entrada no encontrado');
   }
   
+  const rows = await db.query('SELECT plan FROM servers WHERE id = ?', [serverId]);
+  const plan = rows.length > 0 ? rows[0].plan : 'basico';
+  const memLimit = MEM_LIMITS[plan] || 512;
+  
   await emit(`🚀 Iniciando servidor con Node ${nodeVersion || '20'}...`);
   await emit(`📄 Archivo principal detectado: ${mainFile}`);
+  await emit(`🛡️ Entorno aislado: sin secretos del panel | Límite de RAM: ${memLimit}MB (plan ${plan})`);
   
-  const proc = spawn('node', [mainFile], {
+  const proc = spawn('node', [`--max-old-space-size=${memLimit}`, mainFile], {
     cwd: serverDir,
-    env: { ...process.env },
+    env: buildSafeEnv(serverDir),
     shell: false
   });
   
@@ -200,7 +224,7 @@ const reinstall = async (serverId, repoUrl, nodeVersion, io) => {
 
 const runCommand = (command, args, cwd, io, serverId) => {
   return new Promise((resolve, reject) => {
-    const proc = spawn(command, args, { cwd });
+    const proc = spawn(command, args, { cwd, env: buildSafeEnv(cwd) });
     
     proc.stdout.on('data', (data) => {
       io.to(`console-${serverId}`).emit('console-output', data.toString());
