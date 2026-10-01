@@ -29,9 +29,7 @@ const connect = async () => {
   if (!fs.existsSync(DATA_DIR)) {
     fs.mkdirSync(DATA_DIR, { recursive: true });
   }
-  
   SQL = await initSqlJs();
-  
   if (fs.existsSync(DB_FILE)) {
     db = new SQL.Database(fs.readFileSync(DB_FILE));
     console.log('📂 Base de datos existente cargada desde disco');
@@ -39,9 +37,6 @@ const connect = async () => {
     db = new SQL.Database();
     console.log('📂 Base de datos nueva creada');
   }
-  
-  db.run('PRAGMA foreign_keys = ON;');
-  
   process.on('exit', saveSync);
   process.on('SIGINT', () => { saveSync(); process.exit(0); });
   process.on('SIGTERM', () => { saveSync(); process.exit(0); });
@@ -84,7 +79,6 @@ const createTables = async () => {
       role TEXT DEFAULT 'user' CHECK(role IN ('user','admin')),
       created_at TEXT DEFAULT CURRENT_TIMESTAMP
     )`,
-
     `CREATE TABLE IF NOT EXISTS servers (
       id TEXT PRIMARY KEY,
       user_id TEXT NOT NULL,
@@ -92,14 +86,12 @@ const createTables = async () => {
       plan TEXT NOT NULL CHECK(plan IN ('basico','estandar','pro','ultra')),
       repo_url TEXT,
       node_version TEXT DEFAULT '20',
-      language TEXT DEFAULT 'node' CHECK(language IN ('node', 'python')),
       status TEXT DEFAULT 'stopped' CHECK(status IN ('stopped','running','installing','expired')),
       coins_cost REAL NOT NULL,
       expires_at TEXT NOT NULL,
       created_at TEXT DEFAULT CURRENT_TIMESTAMP,
       FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
     )`,
-
     `CREATE TABLE IF NOT EXISTS transactions (
       id TEXT PRIMARY KEY,
       user_id TEXT NOT NULL,
@@ -110,7 +102,6 @@ const createTables = async () => {
       created_at TEXT DEFAULT CURRENT_TIMESTAMP,
       FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
     )`,
-
     `CREATE TABLE IF NOT EXISTS server_logs (
       id TEXT PRIMARY KEY,
       server_id TEXT NOT NULL,
@@ -119,38 +110,24 @@ const createTables = async () => {
       FOREIGN KEY (server_id) REFERENCES servers(id) ON DELETE CASCADE
     )`
   ];
-
   for (const table of tables) {
     db.run(table);
   }
-  
   scheduleSave();
 };
 
 const createInitialAdmin = async () => {
   const adminEmail = process.env.ADMIN_EMAIL || 'l29472954@gmail.com';
-  
   const existing = await query('SELECT id FROM users WHERE email = ?', [adminEmail]);
-  
   if (existing.length === 0) {
     const adminId = uuidv4();
     const hashedPassword = await bcrypt.hash(process.env.ADMIN_PASSWORD || 'luis123', 10);
-    
     await query(
-      `INSERT INTO users (id, username, email, password, coins, role) 
-       VALUES (?, ?, ?, ?, 9999.00, 'admin')`,
+      `INSERT INTO users (id, username, email, password, coins, role) VALUES (?, ?, ?, ?, 9999.00, 'admin')`,
       [adminId, process.env.ADMIN_USERNAME || 'admin', adminEmail, hashedPassword]
     );
-    
     console.log('✅ Admin inicial creado:', adminEmail);
   }
 };
 
-module.exports = {
-  connect,
-  query,
-  createTables,
-  createInitialAdmin,
-  getPool: () => db,
-  save: saveSync
-};
+module.exports = { connect, query, createTables, createInitialAdmin, save: saveSync };
