@@ -79,6 +79,27 @@ const detectMainFile = async (serverDir, language) => {
   return language === 'python' ? 'main.py' : 'index.js';
 };
 
+// Crea un wrapper que inyecta la carpeta packages/ en sys.path
+const createPythonWrapper = async (serverDir, mainFile) => {
+  const wrapperPath = path.join(serverDir, '_run.py');
+  const mainName = path.basename(mainFile, '.py');
+  const wrapperCode = `import sys
+import os
+# Agregar la carpeta de paquetes al sys.path
+_packages = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'packages')
+if _packages not in sys.path:
+    sys.path.insert(0, _packages)
+
+# Importar y ejecutar el main del usuario
+import importlib.util
+_spec = importlib.util.spec_from_file_location("${mainName}", os.path.join(os.path.dirname(os.path.abspath(__file__)), "${mainFile}"))
+_module = importlib.util.module_from_spec(_spec)
+_spec.loader.exec_module(_module)
+`;
+  await fs.writeFile(wrapperPath, wrapperCode, 'utf8');
+  return wrapperPath;
+};
+
 const startServer = async (serverId, nodeVersion, io) => {
   if (isRunning(serverId)) throw new Error('El servidor ya está corriendo');
   const serverDir = path.join(BOTS_DIR, serverId);
@@ -102,8 +123,17 @@ const startServer = async (serverId, nodeVersion, io) => {
   const mainFile = await detectMainFile(serverDir, language);
   let execCmd = 'node';
   let execArgs = [mainFile];
-  if (language === 'python') execCmd = 'python3';
-  else if (mainFile.endsWith('.ts')) { execCmd = 'npx'; execArgs = ['ts-node', mainFile]; }
+  
+  if (language === 'python') {
+    execCmd = 'python3';
+    // Crear wrapper que inyecta packages/ en sys.path
+    const wrapperPath = await createPythonWrapper(serverDir, mainFile);
+    execArgs = [path.basename(wrapperPath)];
+    await emit('🔧 Wrapper Python creado (inyección automática de packages)');
+  } else if (mainFile.endsWith('.ts')) {
+    execCmd = 'npx';
+    execArgs = ['ts-node', mainFile];
+  }
   
   await emit(`🚀 Iniciando servidor (${language === 'python' ? 'Python 3' : `Node ${nodeVersion || '20'}`})...`);
   await emit(`📄 Archivo principal detectado: ${mainFile}`);
@@ -232,7 +262,7 @@ const reinstall = async (serverId, repoUrl, nodeVersion, io) => {
       await emit('🐍 Instalando dependencias del proyecto...');
       try {
         await fs.access(path.join(serverDir, 'requirements.txt'));
-        await runCommand('python3', ['-m', 'pip', 'install', '--target', packagesDir, '-r', 'requirements.txt'], serverDir, io, serverId);
+        await runCommand('python3', ['-m', 'pip', 'install', '--target', packagesDir, '--upgrade', '-r', 'requirements.txt'], serverDir, io, serverId);
         await emit('✅ Dependencias instaladas');
       } catch {
         await emit('ℹ️ No se encontró requirements.txt');
