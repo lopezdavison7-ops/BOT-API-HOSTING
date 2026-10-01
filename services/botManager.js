@@ -5,6 +5,7 @@ const { v4: uuidv4 } = require('uuid');
 const db = require('../db/database');
 
 const runningProcesses = new Map();
+const logQueues = new Map();
 const BOTS_DIR = path.join(__dirname, '..', 'bots');
 
 const initialize = async () => {
@@ -14,6 +15,18 @@ const initialize = async () => {
   } catch (error) {
     console.error('Error al inicializar botManager:', error);
   }
+};
+
+const addLog = (serverId, message) => {
+  const prev = logQueues.get(serverId) || Promise.resolve();
+  const next = prev.then(() =>
+    db.query(
+      'INSERT INTO server_logs (id, server_id, log) VALUES (?, ?, ?)',
+      [uuidv4(), serverId, message]
+    )
+  ).catch((error) => console.error('Error al guardar log:', error));
+  logQueues.set(serverId, next);
+  return next;
 };
 
 const createServerDirectory = async (serverId) => {
@@ -68,10 +81,14 @@ const startServer = async (serverId, nodeVersion, io) => {
     files = [];
   }
   
+  const emit = async (message) => {
+    if (io) io.to(`console-${serverId}`).emit('console-output', message);
+    await addLog(serverId, message);
+  };
+  
   if (!files.includes('package.json')) {
     const msg = '❌ Error: No se encontró package.json. Configura el repositorio en Startup y haz Reinstall.';
-    await addLog(serverId, msg);
-    if (io) io.to(`console-${serverId}`).emit('console-output', msg);
+    await emit(msg);
     throw new Error('package.json no encontrado');
   }
   
@@ -79,15 +96,9 @@ const startServer = async (serverId, nodeVersion, io) => {
   
   if (!mainFile) {
     const msg = '❌ Error: No se encontró el archivo de entrada (index.js, main.js, app.js...). Revisa tu repositorio.';
-    await addLog(serverId, msg);
-    if (io) io.to(`console-${serverId}`).emit('console-output', msg);
+    await emit(msg);
     throw new Error('Archivo de entrada no encontrado');
   }
-  
-  const emit = async (message, type = '') => {
-    if (io) io.to(`console-${serverId}`).emit('console-output', message);
-    await addLog(serverId, message);
-  };
   
   await emit(`🚀 Iniciando servidor con Node ${nodeVersion || '20'}...`);
   await emit(`📄 Archivo principal detectado: ${mainFile}`);
@@ -106,9 +117,13 @@ const startServer = async (serverId, nodeVersion, io) => {
   
   proc.on('close', async (code, signal) => {
     runningProcesses.delete(serverId);
-    await emit(`🛑 Servidor detenido (código: ${code}${signal ? `, señal: ${signal}` : ''})`);
-    if (code !== 0) {
-      await emit('💡 El bot cerró con error. Revisa los mensajes ❌ de arriba: puede faltar un token, una dependencia, o tu bot terminó su ejecución.');
+    if (proc.__stopping) {
+      await emit('🛑 Servidor detenido manualmente.');
+    } else {
+      await emit(`🛑 Servidor detenido (código: ${code}${signal ? `, señal: ${signal}` : ''})`);
+      if (code !== 0) {
+        await emit('💡 El bot cerró por su cuenta. Revisa los mensajes ❌ de arriba: token faltante, dependencia o fin de ejecución.');
+      }
     }
     await db.query('UPDATE servers SET status = ? WHERE id = ?', ['stopped', serverId]);
   });
@@ -124,12 +139,13 @@ const stopServer = async (serverId) => {
   const proc = runningProcesses.get(serverId);
   if (!proc) throw new Error('El servidor no está corriendo');
   
+  proc.__stopping = true;
   await addLog(serverId, '🛑 Deteniendo servidor...');
   proc.kill('SIGTERM');
   
   setTimeout(() => {
-    if (runningProcesses.has(serverId)) {
-      runningProcesses.get(serverId).kill('SIGKILL');
+    if (runningProcesses.get(serverId) === proc) {
+      proc.kill('SIGKILL');
       runningProcesses.delete(serverId);
     }
   }, 5000);
@@ -220,17 +236,6 @@ const checkExpiredServers = async () => {
     }
   } catch (error) {
     console.error('Error al verificar servers expirados:', error);
-  }
-};
-
-const addLog = async (serverId, message) => {
-  try {
-    await db.query(
-      'INSERT INTO server_logs (id, server_id, log) VALUES (?, ?, ?)',
-      [uuidv4(), serverId, message]
-    );
-  } catch (error) {
-    console.error('Error al guardar log:', error);
   }
 };
 
