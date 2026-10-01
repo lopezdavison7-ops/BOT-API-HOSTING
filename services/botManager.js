@@ -30,14 +30,13 @@ const addLog = (serverId, message) => {
 const buildSafeEnv = (serverDir) => {
   const homeDir = process.env.HOME || '/home/container';
   return {
-    PATH: `${homeDir}/.local/bin:/usr/local/bin:/usr/bin:/bin`,
+    PATH: `/usr/local/bin:/usr/bin:/bin:${homeDir}/.local/bin`,
     HOME: homeDir,
     TMPDIR: '/tmp',
     NODE_ENV: 'production',
     LANG: 'C.UTF-8',
     TERM: 'xterm',
-    BOT_DIR: serverDir,
-    PYTHONPATH: `${homeDir}/.local/lib/python3/dist-packages`
+    BOT_DIR: serverDir
   };
 };
 
@@ -166,21 +165,17 @@ const sendCommand = (serverId, command) => {
 };
 
 const ensurePip = async (serverDir, io, serverId) => {
-  // Verifica si pip ya está instalado intentando ejecutar un comando simple
   try {
     await runCommand('python3', ['-m', 'pip', '--version'], serverDir, io, serverId, true);
-    return true; // pip ya existe
-  } catch {
-    // pip no está, hay que instalarlo
-  }
+    return true;
+  } catch {}
   
-  // Descarga get-pip.py y lo instala
   const homeDir = process.env.HOME || '/home/container';
   const getPipPath = path.join(homeDir, 'get-pip.py');
   
   try {
     await runCommand('curl', ['-fsSL', 'https://bootstrap.pypa.io/get-pip.py', '-o', getPipPath], serverDir, io, serverId);
-    await runCommand('python3', [getPipPath, '--user', '--break-system-packages'], serverDir, io, serverId);
+    await runCommand('python3', [getPipPath, '--break-system-packages'], serverDir, io, serverId);
     await fs.rm(getPipPath, { force: true });
     return true;
   } catch (error) {
@@ -209,7 +204,6 @@ const reinstall = async (serverId, repoUrl, nodeVersion, io) => {
     await runCommand('git', ['clone', '--depth', '1', repoUrl, '.'], serverDir, io, serverId);
     
     if (language === 'python') {
-      // PASO 1: Asegurar que pip está instalado
       await emit('🔧 Verificando instalación de pip...');
       try {
         await ensurePip(serverDir, io, serverId);
@@ -219,20 +213,18 @@ const reinstall = async (serverId, repoUrl, nodeVersion, io) => {
         throw e;
       }
       
-      // PASO 2: Actualizar pip
       await emit('🔧 Actualizando pip...');
       try {
-        await runCommand('python3', ['-m', 'pip', 'install', '--upgrade', 'pip', '--user', '--break-system-packages'], serverDir, io, serverId);
+        await runCommand('python3', ['-m', 'pip', 'install', '--upgrade', 'pip', '--break-system-packages'], serverDir, io, serverId);
       } catch (e) {
         await emit(`⚠️ No se pudo actualizar pip: ${e.message}`);
       }
       
-      // PASO 3: Instalar WAeys desde GitHub
       await emit('🔧 Instalando WAeys (WhatsApp library) desde GitHub...');
       const tmpWaeys = '/tmp/waeys-install-' + serverId.slice(0, 8);
       try {
         await runCommand('git', ['clone', '--depth', '1', 'https://github.com/toZyn/WAeys.git', tmpWaeys], serverDir, io, serverId);
-        await runCommand('python3', ['-m', 'pip', 'install', '--user', '--break-system-packages', tmpWaeys], serverDir, io, serverId);
+        await runCommand('python3', ['-m', 'pip', 'install', '--break-system-packages', tmpWaeys], serverDir, io, serverId);
         await emit('✅ WAeys instalado correctamente');
       } catch (e) {
         await emit(`⚠️ Error al instalar WAeys: ${e.message}`);
@@ -240,11 +232,10 @@ const reinstall = async (serverId, repoUrl, nodeVersion, io) => {
         try { await fs.rm(tmpWaeys, { recursive: true, force: true }); } catch {}
       }
       
-      // PASO 4: Instalar requirements.txt
       await emit('🐍 Instalando dependencias del proyecto...');
       try {
         await fs.access(path.join(serverDir, 'requirements.txt'));
-        await runCommand('python3', ['-m', 'pip', 'install', '--user', '--break-system-packages', '-r', 'requirements.txt'], serverDir, io, serverId);
+        await runCommand('python3', ['-m', 'pip', 'install', '--break-system-packages', '-r', 'requirements.txt'], serverDir, io, serverId);
         await emit('✅ Dependencias instaladas');
       } catch {
         await emit('ℹ️ No se encontró requirements.txt');
