@@ -2,7 +2,18 @@ let socket = null;
 let serverId = null;
 let serverData = null;
 
+// DIAGNÓSTICO: cualquier error de JS se muestra en pantalla
+window.addEventListener('error', (e) => {
+  console.error('ERROR JS:', e.message);
+  const el = document.getElementById('startupError');
+  if (el) {
+    el.textContent = '❌ Error JS: ' + e.message;
+    el.style.display = 'block';
+  }
+});
+
 document.addEventListener('DOMContentLoaded', () => {
+  console.log('✅ server-panel.js cargado correctamente');
   if (!requireAuth()) return;
 
   const urlParams = new URLSearchParams(window.location.search);
@@ -61,8 +72,10 @@ const updateServerUI = () => {
     statusText.textContent = 'Detenido';
   }
 
-  if (serverData.repo_url) document.getElementById('repoUrl').value = serverData.repo_url;
-  document.getElementById('nodeVersion').value = serverData.node_version;
+  const repoInput = document.getElementById('repoUrl');
+  const nodeSelect = document.getElementById('nodeVersion');
+  if (repoInput && serverData.repo_url) repoInput.value = serverData.repo_url;
+  if (nodeSelect && serverData.node_version) nodeSelect.value = serverData.node_version;
 
   updateButtons();
 };
@@ -176,30 +189,60 @@ const setupStartupForm = () => {
   const startupForm = document.getElementById('startupForm');
   const startupError = document.getElementById('startupError');
   const startupSuccess = document.getElementById('startupSuccess');
+  const saveBtn = startupForm.querySelector('button[type="submit"]');
 
-  startupForm.addEventListener('submit', async (e) => {
-    e.preventDefault();
+  const doSave = async () => {
     startupError.style.display = 'none';
     startupSuccess.style.display = 'none';
 
     const repoUrl = document.getElementById('repoUrl').value.trim();
     const nodeVersion = document.getElementById('nodeVersion').value;
 
-    const result = await apiFetch(`/servers/${serverId}/startup`, {
-      method: 'PUT',
-      body: JSON.stringify({ repo_url: repoUrl, node_version: nodeVersion, language: 'node' })
-    });
-
-    if (result && result.ok) {
-      startupSuccess.textContent = 'Startup actualizado correctamente';
-      startupSuccess.style.display = 'block';
-      serverData.repo_url = repoUrl;
-      serverData.node_version = nodeVersion;
-      updateServerUI();
-    } else {
-      startupError.textContent = result?.data?.error || 'Error al actualizar startup';
+    if (!repoUrl) {
+      startupError.textContent = '⚠️ Escribe la URL del repositorio primero';
       startupError.style.display = 'block';
+      return;
     }
+
+    saveBtn.disabled = true;
+    saveBtn.textContent = 'Guardando...';
+
+    try {
+      const result = await apiFetch(`/servers/${serverId}/startup`, {
+        method: 'PUT',
+        body: JSON.stringify({ repo_url: repoUrl, node_version: nodeVersion, language: 'node' })
+      });
+
+      if (result && result.ok) {
+        startupSuccess.textContent = '✅ Startup actualizado correctamente';
+        startupSuccess.style.display = 'block';
+        showNotification('Startup guardado ✅', 'success');
+        serverData.repo_url = repoUrl;
+        serverData.node_version = nodeVersion;
+        updateServerUI();
+      } else {
+        startupError.textContent = '❌ ' + (result?.data?.error || ('Error ' + (result?.status || 'desconocido')));
+        startupError.style.display = 'block';
+      }
+    } catch (err) {
+      startupError.textContent = '❌ Error de red: ' + err.message;
+      startupError.style.display = 'block';
+    } finally {
+      saveBtn.disabled = false;
+      saveBtn.textContent = 'Guardar Configuración';
+    }
+  };
+
+  // Click directo en el botón (garantizado que se ejecuta)
+  saveBtn.addEventListener('click', (e) => {
+    e.preventDefault();
+    doSave();
+  });
+
+  // Submit por si presiona Enter en el input
+  startupForm.addEventListener('submit', (e) => {
+    e.preventDefault();
+    doSave();
   });
 };
 
