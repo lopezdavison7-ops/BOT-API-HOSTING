@@ -8,12 +8,7 @@ const runningProcesses = new Map();
 const logQueues = new Map();
 const BOTS_DIR = path.join(__dirname, '..', 'bots');
 
-const MEM_LIMITS = {
-  basico: 256,
-  estandar: 512,
-  pro: 1024,
-  ultra: 2048
-};
+const MEM_LIMITS = { basico: 256, estandar: 512, pro: 1024, ultra: 2048 };
 
 const initialize = async () => {
   try {
@@ -27,26 +22,21 @@ const initialize = async () => {
 const addLog = (serverId, message) => {
   const prev = logQueues.get(serverId) || Promise.resolve();
   const next = prev.then(() =>
-    db.query(
-      'INSERT INTO server_logs (id, server_id, log) VALUES (?, ?, ?)',
-      [uuidv4(), serverId, message]
-    )
+    db.query('INSERT INTO server_logs (id, server_id, log) VALUES (?, ?, ?)', [uuidv4(), serverId, message])
   ).catch((error) => console.error('Error al guardar log:', error));
   logQueues.set(serverId, next);
   return next;
 };
 
-const buildSafeEnv = (serverDir) => {
-  return {
-    PATH: process.env.PATH || '/usr/local/bin:/usr/bin:/bin',
-    HOME: serverDir,
-    TMPDIR: serverDir,
-    NODE_ENV: 'production',
-    LANG: 'C.UTF-8',
-    TERM: 'xterm',
-    BOT_DIR: serverDir
-  };
-};
+const buildSafeEnv = (serverDir) => ({
+  PATH: process.env.PATH || '/usr/local/bin:/usr/bin:/bin',
+  HOME: serverDir,
+  TMPDIR: serverDir,
+  NODE_ENV: 'production',
+  LANG: 'C.UTF-8',
+  TERM: 'xterm',
+  BOT_DIR: serverDir
+});
 
 const createServerDirectory = async (serverId) => {
   const serverDir = path.join(BOTS_DIR, serverId);
@@ -64,7 +54,7 @@ const deleteServerDirectory = async (serverId) => {
 
 const isRunning = (serverId) => runningProcesses.has(serverId);
 
-const detectMainFile = async (serverDir) => {
+const detectMainFile = async (serverDir, language) => {
   try {
     const pkg = JSON.parse(await fs.readFile(path.join(serverDir, 'package.json'), 'utf8'));
     if (pkg.main && typeof pkg.main === 'string') {
@@ -75,68 +65,66 @@ const detectMainFile = async (serverDir) => {
     }
   } catch {}
   
-  const candidates = ['index.js', 'main.js', 'app.js', 'bot.js', 'server.js', 'src/index.js', 'src/main.js'];
+  const nodeCandidates = ['index.js', 'main.js', 'app.js', 'bot.js', 'server.js', 'src/index.js', 'src/main.js', 'index.ts', 'bot.ts'];
+  const pythonCandidates = ['main.py', 'bot.py', 'app.py', 'index.py'];
+  const candidates = language === 'python' ? pythonCandidates : nodeCandidates;
+  
   for (const candidate of candidates) {
     try {
       await fs.access(path.join(serverDir, candidate));
       return candidate;
     } catch {}
   }
-  return null;
+  return language === 'python' ? 'main.py' : 'index.js';
 };
 
 const startServer = async (serverId, nodeVersion, io) => {
-  if (isRunning(serverId)) {
-    throw new Error('El servidor ya está corriendo');
-  }
+  if (isRunning(serverId)) throw new Error('El servidor ya está corriendo');
   
   const serverDir = path.join(BOTS_DIR, serverId);
+  const rows = await db.query('SELECT language FROM servers WHERE id = ?', [serverId]);
+  const language = rows.length > 0 ? rows[0].language : 'node';
+  const memLimit = MEM_LIMITS[(await db.query('SELECT plan FROM servers WHERE id = ?', [serverId]))[0]?.plan] || 512;
   
-  let files;
-  try {
-    files = await fs.readdir(serverDir);
-  } catch {
-    await fs.mkdir(serverDir, { recursive: true });
-    files = [];
-  }
+  let files = [];
+  try { files = await fs.readdir(serverDir); } catch {}
   
   const emit = async (message) => {
     if (io) io.to(`console-${serverId}`).emit('console-output', message);
     await addLog(serverId, message);
   };
   
-  if (!files.includes('package.json')) {
-    const msg = '❌ Error: No se encontró package.json. Configura el repositorio en Startup y haz Reinstall.';
-    await emit(msg);
+  if (language === 'node' && !files.includes('package.json')) {
+    await emit('❌ Error: No se encontró package.json. Configura el repositorio y haz Reinstall.');
     throw new Error('package.json no encontrado');
   }
   
-  const mainFile = await detectMainFile(serverDir);
+  const mainFile = await detectMainFile(serverDir, language);
   
-  if (!mainFile) {
-    const msg = '❌ Error: No se encontró el archivo de entrada (index.js, main.js, app.js...). Revisa tu repositorio.';
-    await emit(msg);
-    throw new Error('Archivo de entrada no encontrado');
+  let execCmd = 'node';
+  let execArgs = [mainFile];
+  
+  if (language === 'python') {
+    execCmd = 'python3';
+  } else if (mainFile.endsWith('.ts')) {
+    execCmd = 'npx';
+    execArgs = ['ts-node', mainFile];
   }
   
-  const rows = await db.query('SELECT plan FROM servers WHERE id = ?', [serverId]);
-  const plan = rows.length > 0 ? rows[0].plan : 'basico';
-  const memLimit = MEM_LIMITS[plan] || 512;
-  
-  await emit(`🚀 Iniciando servidor con Node ${nodeVersion || '20'}...`);
+  await emit(`🚀 Iniciando servidor (${language === 'python' ? 'Python 3' : `Node ${nodeVersion || '20'}`})...`);
   await emit(`📄 Archivo principal detectado: ${mainFile}`);
-  await emit(`🛡️ Entorno aislado: sin secretos del panel | Límite de RAM: ${memLimit}MB (plan ${plan})`);
+  await emit(`🛡️ Entorno aislado | Límite de RAM: ${language === 'node' ? memLimit + 'MB' : 'N/A (Python)'}`);
   
-  const proc = spawn('node', [`--max-old-space-size=${memLimit}`, mainFile], {
+  const ramArgs = language === 'node' ? [`--max-old-space-size=${memLimit}`] : [];
+  
+  const proc = spawn(execCmd, [...ramArgs, ...execArgs], {
     cwd: serverDir,
     env: buildSafeEnv(serverDir),
     shell: false
   });
   
   runningProcesses.set(serverId, proc);
-  
   proc.stdout.on('data', (data) => emit(data.toString()));
-  
   proc.stderr.on('data', (data) => emit(`❌ ${data.toString()}`));
   
   proc.on('close', async (code, signal) => {
@@ -145,9 +133,7 @@ const startServer = async (serverId, nodeVersion, io) => {
       await emit('🛑 Servidor detenido manualmente.');
     } else {
       await emit(`🛑 Servidor detenido (código: ${code}${signal ? `, señal: ${signal}` : ''})`);
-      if (code !== 0) {
-        await emit('💡 El bot cerró por su cuenta. Revisa los mensajes ❌ de arriba: token faltante, dependencia o fin de ejecución.');
-      }
+      if (code !== 0) await emit('💡 El bot cerró por su cuenta. Revisa los mensajes ❌ de arriba.');
     }
     await db.query('UPDATE servers SET status = ? WHERE id = ?', ['stopped', serverId]);
   });
@@ -162,11 +148,9 @@ const startServer = async (serverId, nodeVersion, io) => {
 const stopServer = async (serverId) => {
   const proc = runningProcesses.get(serverId);
   if (!proc) throw new Error('El servidor no está corriendo');
-  
   proc.__stopping = true;
   await addLog(serverId, '🛑 Deteniendo servidor...');
   proc.kill('SIGTERM');
-  
   setTimeout(() => {
     if (runningProcesses.get(serverId) === proc) {
       proc.kill('SIGKILL');
@@ -195,6 +179,9 @@ const sendCommand = (serverId, command) => {
 
 const reinstall = async (serverId, repoUrl, nodeVersion, io) => {
   const serverDir = path.join(BOTS_DIR, serverId);
+  const rows = await db.query('SELECT language FROM servers WHERE id = ?', [serverId]);
+  const language = rows.length > 0 ? rows[0].language : 'node';
+  
   const emit = async (message) => {
     if (io) io.to(`console-${serverId}`).emit('console-output', message);
     await addLog(serverId, message);
@@ -203,15 +190,24 @@ const reinstall = async (serverId, repoUrl, nodeVersion, io) => {
   try {
     await db.query('UPDATE servers SET status = ? WHERE id = ?', ['installing', serverId]);
     await emit('📦 Iniciando reinstalación...');
-    
     await fs.rm(serverDir, { recursive: true, force: true });
     await fs.mkdir(serverDir, { recursive: true });
     
     await emit(`📥 Clonando repositorio: ${repoUrl}`);
     await runCommand('git', ['clone', '--depth', '1', repoUrl, serverDir], serverDir, io, serverId);
     
-    await emit('📦 Instalando dependencias (npm install)...');
-    await runCommand('npm', ['install', '--production'], serverDir, io, serverId);
+    if (language === 'python') {
+      await emit('🐍 Instalando dependencias de Python...');
+      try {
+        await fs.access(path.join(serverDir, 'requirements.txt'));
+        await runCommand('pip3', ['install', '-r', 'requirements.txt'], serverDir, io, serverId);
+      } catch {
+        await emit('⚠️ No se encontró requirements.txt, omitiendo instalación de Python.');
+      }
+    } else {
+      await emit('📦 Instalando dependencias (npm install)...');
+      await runCommand('npm', ['install', '--production'], serverDir, io, serverId);
+    }
     
     await db.query('UPDATE servers SET status = ? WHERE id = ?', ['stopped', serverId]);
     await emit('✅ Reinstalación completada. Puedes iniciar tu servidor.');
@@ -225,33 +221,22 @@ const reinstall = async (serverId, repoUrl, nodeVersion, io) => {
 const runCommand = (command, args, cwd, io, serverId) => {
   return new Promise((resolve, reject) => {
     const proc = spawn(command, args, { cwd, env: buildSafeEnv(cwd) });
-    
     proc.stdout.on('data', (data) => {
       io.to(`console-${serverId}`).emit('console-output', data.toString());
       addLog(serverId, data.toString());
     });
-    
     proc.stderr.on('data', (data) => {
       io.to(`console-${serverId}`).emit('console-output', data.toString());
       addLog(serverId, data.toString());
     });
-    
-    proc.on('close', (code) => {
-      if (code === 0) resolve();
-      else reject(new Error(`${command} terminó con código ${code}`));
-    });
-    
+    proc.on('close', (code) => (code === 0 ? resolve() : reject(new Error(`${command} terminó con código ${code}`))));
     proc.on('error', reject);
   });
 };
 
 const checkExpiredServers = async () => {
   try {
-    const expiredServers = await db.query(
-      `SELECT * FROM servers WHERE expires_at < ? AND status != 'expired'`,
-      [new Date()]
-    );
-    
+    const expiredServers = await db.query(`SELECT * FROM servers WHERE expires_at < ? AND status != 'expired'`, [new Date()]);
     for (const server of expiredServers) {
       if (isRunning(server.id)) await stopServer(server.id);
       await deleteServerDirectory(server.id);
@@ -263,15 +248,4 @@ const checkExpiredServers = async () => {
   }
 };
 
-module.exports = {
-  initialize,
-  createServerDirectory,
-  deleteServerDirectory,
-  isRunning,
-  startServer,
-  stopServer,
-  restartServer,
-  sendCommand,
-  reinstall,
-  checkExpiredServers
-};
+module.exports = { initialize, createServerDirectory, deleteServerDirectory, isRunning, startServer, stopServer, restartServer, sendCommand, reinstall, checkExpiredServers };
