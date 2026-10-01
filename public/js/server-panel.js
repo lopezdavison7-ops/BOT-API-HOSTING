@@ -46,7 +46,6 @@ const updateServerUI = () => {
   document.getElementById('serverCreated').textContent = formatDate(serverData.created_at);
   document.getElementById('serverCost').textContent = `${serverData.coins_cost} coins`;
   
-  const daysRemaining = getDaysRemaining(serverData.expires_at);
   const statusDot = document.getElementById('statusDot');
   const statusText = document.getElementById('serverStatus');
   
@@ -95,7 +94,7 @@ const updateButtons = () => {
 };
 
 const setupConsole = () => {
-  socket = io();
+  socket = io({ auth: { token: getToken() } });
   const consoleOutput = document.getElementById('consoleOutput');
   
   socket.on('connect', () => {
@@ -106,6 +105,10 @@ const setupConsole = () => {
   
   socket.on('console-output', (message) => {
     addConsoleLine(message);
+  });
+  
+  socket.on('connect_error', (error) => {
+    addConsoleLine(`❌ Error de conexión con la consola: ${error.message}`, 'error');
   });
   
   socket.on('disconnect', () => {
