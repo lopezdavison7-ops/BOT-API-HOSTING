@@ -63,7 +63,8 @@ const detectMainFile = async (serverDir) => {
       } catch {}
     }
   } catch {}
-  const candidates = ['index.js', 'main.js', 'app.js', 'bot.js', 'server.js', 'src/index.js', 'src/main.js', 'index.ts', 'bot.ts'];
+  // 🔥 FIX: Se agregó 'main.ts' a la lista de candidatos
+  const candidates = ['index.js', 'main.js', 'app.js', 'bot.js', 'server.js', 'src/index.js', 'src/main.js', 'index.ts', 'main.ts', 'bot.ts'];
   for (const candidate of candidates) {
     try {
       await fs.access(path.join(serverDir, candidate));
@@ -98,7 +99,7 @@ const startServer = async (serverId, nodeVersion, io) => {
 
   if (mainFile.endsWith('.ts')) {
     execCmd = 'npx';
-    execArgs = [`--max-old-space-size=${memLimit}`, 'ts-node', mainFile];
+    execArgs = ['ts-node', mainFile];
   }
 
   await emit(`🚀 Iniciando servidor (Node ${nodeVersion || '20'})...`);
