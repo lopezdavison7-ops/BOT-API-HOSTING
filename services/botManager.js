@@ -1,3 +1,4 @@
+
 const { spawn } = require('child_process');
 const path = require('path');
 const fs = require('fs').promises;
@@ -63,7 +64,6 @@ const detectMainFile = async (serverDir) => {
       } catch {}
     }
   } catch {}
-  // 🔥 FIX: Se agregó 'main.ts' a la lista de candidatos
   const candidates = ['index.js', 'main.js', 'app.js', 'bot.js', 'server.js', 'src/index.js', 'src/main.js', 'index.ts', 'main.ts', 'bot.ts'];
   for (const candidate of candidates) {
     try {
@@ -93,17 +93,47 @@ const startServer = async (serverId, nodeVersion, io) => {
     throw new Error('package.json no encontrado');
   }
 
-  const mainFile = await detectMainFile(serverDir);
-  let execCmd = 'node';
-  let execArgs = [`--max-old-space-size=${memLimit}`, mainFile];
+  // 🔥 LÓGICA INTELIGENTE: Verificar si existe el script "start"
+  let hasStartScript = false;
+  let pkgMain = 'index.js';
+  try {
+    const pkg = JSON.parse(await fs.readFile(path.join(serverDir, 'package.json'), 'utf8'));
+    if (pkg.scripts && pkg.scripts.start) {
+      hasStartScript = true;
+    }
+    if (pkg.main) {
+      pkgMain = pkg.main;
+    }
+  } catch {}
 
-  if (mainFile.endsWith('.ts')) {
-    execCmd = 'npx';
-    execArgs = ['ts-node', mainFile];
+  let execCmd = 'node';
+  let execArgs = [`--max-old-space-size=${memLimit}`];
+
+  if (hasStartScript) {
+    execCmd = 'npm';
+    execArgs = ['start'];
+    await emit('🚀 Iniciando servidor con "npm start"...');
+  } else {
+    const mainFile = await detectMainFile(serverDir);
+    await emit(`🚀 Iniciando servidor (Node ${nodeVersion || '20'})...`);
+    await emit(`📄 Archivo principal detectado: ${mainFile}`);
+    
+    if (mainFile.endsWith('.ts')) {
+      await emit('🔧 Compilando TypeScript (tsc)...');
+      try {
+        await runCommand('npx', ['tsc'], serverDir, io, serverId);
+        await emit('✅ Compilación exitosa');
+        // Usar el main definido en package.json o dist/main.js por defecto
+        execArgs.push(pkgMain || 'dist/main.js');
+      } catch (e) {
+        await emit(`❌ Error en compilación: ${e.message}`);
+        throw new Error('Error al compilar TypeScript');
+      }
+    } else {
+      execArgs.push(mainFile);
+    }
   }
 
-  await emit(`🚀 Iniciando servidor (Node ${nodeVersion || '20'})...`);
-  await emit(`📄 Archivo principal detectado: ${mainFile}`);
   await emit(`🛡️ Entorno aislado | Límite de RAM: ${memLimit}MB`);
 
   const proc = spawn(execCmd, execArgs, {
