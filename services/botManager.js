@@ -95,16 +95,9 @@ const startServer = async (serverId, nodeVersion, io) => {
     await emit(`📄 Archivo principal detectado: ${mainFile}`);
     
     if (mainFile.endsWith('.ts')) {
-      await emit('🔨 Compilando TypeScript automáticamente...');
-      try {
-        await runCommand('npx', ['tsc'], serverDir, io, serverId);
-        await emit('✅ Compilación exitosa');
-        execArgs.push('dist/main.js');
-      } catch (e) {
-        await emit(`⚠️ Compilación falló, intentando ejecutar directamente...`);
-        execCmd = 'npx';
-        execArgs = ['ts-node', '--transpile-only', mainFile];
-      }
+      await emit('🔨 Ejecutando TypeScript directamente con tsx (sin compilación)...');
+      execCmd = 'npx';
+      execArgs = ['tsx', mainFile];
     } else {
       execArgs.push(mainFile);
     }
@@ -190,40 +183,38 @@ const reinstall = async (serverId, repoUrl, nodeVersion, io) => {
     await emit('📦 Instalando dependencias (npm install)...');
     await runCommand('npm', ['install'], serverDir, io, serverId);
 
-    // 🔥 AUTO-FIX PROFESIONAL: Si existe tsconfig.json, lo reescribimos con una config universal que NUNCA falla
-    const tsconfigPath = path.join(serverDir, 'tsconfig.json');
+    // 🔥 LÓGICA PROFESIONAL: Detectar y preparar proyectos TypeScript (ES Modules)
     try {
-      await fs.access(tsconfigPath);
-      const safeTsConfig = {
-        compilerOptions: {
-          target: "ES2022",
-          module: "CommonJS",
-          moduleResolution: "node",
-          outDir: "./dist",
-          rootDir: "./",
-          strict: false,
-          esModuleInterop: true,
-          skipLibCheck: true,
-          resolveJsonModule: true,
-          allowJs: true
-        },
-        include: ["**/*.ts", "**/*.js"],
-        exclude: ["node_modules", "dist"]
-      };
-      await fs.writeFile(tsconfigPath, JSON.stringify(safeTsConfig, null, 2), 'utf8');
-      await emit('🔧 tsconfig.json optimizado automáticamente (Compatibilidad 100%)');
-    } catch {}
+      const pkgPath = path.join(serverDir, 'package.json');
+      const pkg = JSON.parse(await fs.readFile(pkgPath, 'utf8'));
+      const files = await fs.readdir(serverDir);
+      const hasTsFiles = files.some(f => f.endsWith('.ts'));
+      const isEsModule = pkg.type === 'module';
 
-    // Intentar compilar
-    try {
-      const pkg = JSON.parse(await fs.readFile(path.join(serverDir, 'package.json'), 'utf8'));
-      if (pkg.scripts && pkg.scripts.build) {
+      if (hasTsFiles && isEsModule) {
+        await emit('🚀 Detectado proyecto TypeScript (ES Module).');
+        await emit('🔧 Configurando ejecución directa con tsx (ignora tsconfig.json rotos)...');
+        
+        // Buscamos el archivo principal .ts
+        const tsFile = files.find(f => f === 'main.ts' || f === 'index.ts' || f === 'app.ts' || f === 'bot.ts') || 'main.ts';
+        
+        // Forzamos el script de inicio a usar tsx
+        if (!pkg.scripts) pkg.scripts = {};
+        pkg.scripts.start = `npx tsx ${tsFile}`;
+        
+        await fs.writeFile(pkgPath, JSON.stringify(pkg, null, 2), 'utf8');
+        await emit(`✅ Script de inicio optimizado a: "${pkg.scripts.start}"`);
+      } else if (pkg.scripts && pkg.scripts.build) {
         await emit('🔨 Compilando proyecto (npm run build)...');
-        await runCommand('npm', ['run', 'build'], serverDir, io, serverId);
-        await emit('✅ Compilación exitosa');
+        try {
+          await runCommand('npm', ['run', 'build'], serverDir, io, serverId);
+          await emit('✅ Compilación exitosa');
+        } catch (e) {
+          await emit('⚠️ La compilación falló, pero el hosting intentará ejecutar de todos modos.');
+        }
       }
     } catch (e) {
-      await emit('⚠️ La compilación falló, pero el hosting intentará ejecutar de todos modos.');
+      await emit(`⚠️ Nota: ${e.message}`);
     }
 
     // Crear .env si no existe
