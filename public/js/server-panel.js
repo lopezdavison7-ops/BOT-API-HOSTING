@@ -26,8 +26,8 @@ document.addEventListener('DOMContentLoaded', () => {
 const loadServer = async () => {
   const result = await apiFetch(`/servers/${serverId}`);
   if (!result || !result.ok) {
-    showNotification('Servidor no encontrado', 'error');
-    setTimeout(() => window.location.href = '/dashboard.html', 1500);
+    alert('Servidor no encontrado');
+    window.location.href = '/dashboard.html';
     return;
   }
   serverData = result.data.server;
@@ -35,57 +35,60 @@ const loadServer = async () => {
 };
 
 const updateServerUI = () => {
-  document.getElementById('serverName').textContent = serverData.name;
-  document.getElementById('serverPlan').textContent = capitalizeFirst(serverData.plan);
-  document.getElementById('serverExpires').textContent = formatDate(serverData.expires_at);
-  document.getElementById('serverNode').textContent = `v${serverData.node_version}`;
-  document.getElementById('serverRepo').textContent = serverData.repo_url || 'No configurado';
-  document.getElementById('serverId').textContent = serverData.id;
-  document.getElementById('serverCreated').textContent = formatDate(serverData.created_at);
-  document.getElementById('serverCost').textContent = `${serverData.coins_cost} coins`;
+  const setName = (id, val) => { const el = document.getElementById(id); if (el) el.textContent = val; };
+  
+  setName('serverName', serverData.name);
+  setName('serverPlan', capitalizeFirst(serverData.plan));
+  setName('serverExpires', formatDate(serverData.expires_at));
+  setName('serverNode', `v${serverData.node_version}`);
+  setName('serverRepo', serverData.repo_url || 'No configurado');
+  setName('serverId', serverData.id);
+  setName('serverCreated', formatDate(serverData.created_at));
+  setName('serverCost', `${serverData.coins_cost} coins`);
 
   const statusDot = document.getElementById('statusDot');
   const statusText = document.getElementById('serverStatus');
 
-  if (serverData.status === 'expired') {
-    statusDot.className = 'status-dot expired';
-    statusText.textContent = 'Expirado';
-  } else if (serverData.isRunning) {
-    statusDot.className = 'status-dot running';
-    statusText.textContent = 'Corriendo';
-  } else if (serverData.status === 'installing') {
-    statusDot.className = 'status-dot installing';
-    statusText.textContent = 'Instalando';
-  } else {
-    statusDot.className = 'status-dot stopped';
-    statusText.textContent = 'Detenido';
+  if (statusDot && statusText) {
+    if (serverData.status === 'expired') {
+      statusDot.className = 'status-dot expired';
+      statusText.textContent = 'Expirado';
+    } else if (serverData.isRunning) {
+      statusDot.className = 'status-dot running';
+      statusText.textContent = 'Corriendo';
+    } else if (serverData.status === 'installing') {
+      statusDot.className = 'status-dot installing';
+      statusText.textContent = 'Instalando';
+    } else {
+      statusDot.className = 'status-dot stopped';
+      statusText.textContent = 'Detenido';
+    }
   }
 
-  if (serverData.repo_url) document.getElementById('repoUrl').value = serverData.repo_url;
-  document.getElementById('nodeVersion').value = serverData.node_version;
+  const repoInput = document.getElementById('repoUrl');
+  if (repoInput && serverData.repo_url) repoInput.value = serverData.repo_url;
+  
+  const nodeSelect = document.getElementById('nodeVersion');
+  if (nodeSelect && serverData.node_version) nodeSelect.value = serverData.node_version;
 
   updateButtons();
 };
 
 const updateButtons = () => {
-  const startBtn = document.getElementById('startBtn');
-  const stopBtn = document.getElementById('stopBtn');
-  const restartBtn = document.getElementById('restartBtn');
-  const consoleInput = document.getElementById('consoleInput');
-  const sendCommand = document.getElementById('sendCommand');
-
+  const setDisabled = (id, val) => { const el = document.getElementById(id); if (el) el.disabled = val; };
+  
   if (serverData.isRunning) {
-    startBtn.disabled = true;
-    stopBtn.disabled = false;
-    restartBtn.disabled = false;
-    consoleInput.disabled = false;
-    sendCommand.disabled = false;
+    setDisabled('startBtn', true);
+    setDisabled('stopBtn', false);
+    setDisabled('restartBtn', false);
+    setDisabled('consoleInput', false);
+    setDisabled('sendCommand', false);
   } else {
-    startBtn.disabled = serverData.status === 'expired';
-    stopBtn.disabled = true;
-    restartBtn.disabled = serverData.status === 'expired';
-    consoleInput.disabled = true;
-    sendCommand.disabled = true;
+    setDisabled('startBtn', serverData.status === 'expired');
+    setDisabled('stopBtn', true);
+    setDisabled('restartBtn', serverData.status === 'expired');
+    setDisabled('consoleInput', true);
+    setDisabled('sendCommand', true);
   }
 };
 
@@ -103,15 +106,17 @@ const setupConsole = () => {
   socket.on('connect_error', (error) => addConsoleLine(`❌ Error de conexión: ${error.message}`, 'error'));
   socket.on('disconnect', () => addConsoleLine('❌ Desconectado de la consola', 'error'));
 
-  document.getElementById('clearConsole').addEventListener('click', () => consoleOutput.innerHTML = '');
+  const clearBtn = document.getElementById('clearConsole');
+  if (clearBtn) clearBtn.addEventListener('click', () => { if (consoleOutput) consoleOutput.innerHTML = ''; });
 
   const consoleInput = document.getElementById('consoleInput');
   const sendCommandBtn = document.getElementById('sendCommand');
 
-  consoleInput.addEventListener('keypress', (e) => { if (e.key === 'Enter') sendCmd(); });
-  sendCommandBtn.addEventListener('click', sendCmd);
+  if (consoleInput) consoleInput.addEventListener('keypress', (e) => { if (e.key === 'Enter') sendCmd(); });
+  if (sendCommandBtn) sendCommandBtn.addEventListener('click', sendCmd);
 
   function sendCmd() {
+    if (!consoleInput) return;
     const command = consoleInput.value.trim();
     if (command) {
       socket.emit('send-command', { serverId, command });
@@ -123,6 +128,7 @@ const setupConsole = () => {
 
 const addConsoleLine = (message, type = '') => {
   const consoleOutput = document.getElementById('consoleOutput');
+  if (!consoleOutput) return;
   const line = document.createElement('div');
   line.className = `console-line ${type}`;
   line.textContent = message;
@@ -135,27 +141,34 @@ const loadConsoleHistory = async () => {
   if (result && result.ok) {
     const logs = result.data.logs;
     const consoleOutput = document.getElementById('consoleOutput');
-    consoleOutput.innerHTML = '';
-    logs.forEach(log => addConsoleLine(log));
+    if (consoleOutput) {
+      consoleOutput.innerHTML = '';
+      logs.forEach(log => addConsoleLine(log));
+    }
   }
 };
 
 const setupActions = () => {
-  document.getElementById('startBtn').addEventListener('click', async () => await serverAction('start'));
-  document.getElementById('stopBtn').addEventListener('click', async () => await serverAction('stop'));
-  document.getElementById('restartBtn').addEventListener('click', async () => await serverAction('restart'));
+  const bindAction = (btnId, action) => {
+    const btn = document.getElementById(btnId);
+    if (btn) btn.addEventListener('click', async () => await serverAction(action));
+  };
+  bindAction('startBtn', 'start');
+  bindAction('stopBtn', 'stop');
+  bindAction('restartBtn', 'restart');
 };
 
 const serverAction = async (action) => {
   const btn = document.getElementById(`${action}Btn`);
-  btn.disabled = true;
+  if (btn) btn.disabled = true;
+  
   const result = await apiFetch(`/servers/${serverId}/${action}`, { method: 'POST' });
   if (result && result.ok) {
-    showNotification(`Servidor ${action === 'start' ? 'iniciado' : action === 'stop' ? 'detenido' : 'reiniciado'}`, 'success');
+    alert(`✅ Servidor ${action === 'start' ? 'iniciado' : action === 'stop' ? 'detenido' : 'reiniciado'}`);
     setTimeout(loadServer, 1000);
   } else {
-    showNotification(result?.data?.error || 'Error en la acción', 'error');
-    btn.disabled = false;
+    alert(`❌ Error: ${result?.data?.error || 'Error en la acción'}`);
+    if (btn) btn.disabled = false;
   }
 };
 
@@ -167,70 +180,94 @@ const setupTabs = () => {
       tabs.forEach(t => t.classList.remove('active'));
       tabContents.forEach(tc => tc.classList.remove('active'));
       tab.classList.add('active');
-      document.getElementById(`${tab.dataset.tab}-tab`).classList.add('active');
+      const target = document.getElementById(`${tab.dataset.tab}-tab`);
+      if (target) target.classList.add('active');
     });
   });
 };
 
+// 🔥 ESTA ES LA FUNCIÓN CLAVE A PRUEBA DE BALAS 🔥
 const setupStartupForm = () => {
   const startupForm = document.getElementById('startupForm');
-  const startupError = document.getElementById('startupError');
-  const startupSuccess = document.getElementById('startupSuccess');
+  if (!startupForm) {
+    console.error('ERROR CRÍTICO: No se encontró el formulario con id="startupForm"');
+    return;
+  }
 
   startupForm.addEventListener('submit', async (e) => {
     e.preventDefault();
-    startupError.style.display = 'none';
-    startupSuccess.style.display = 'none';
+    
+    const repoInput = document.getElementById('repoUrl');
+    const nodeSelect = document.getElementById('nodeVersion');
+    
+    const repoUrl = repoInput ? repoInput.value.trim() : '';
+    const nodeVersion = nodeSelect ? nodeSelect.value : '20';
 
-    const repoUrl = document.getElementById('repoUrl').value.trim();
-    const nodeVersion = document.getElementById('nodeVersion').value;
+    if (!repoUrl) {
+      alert('⚠️ Por favor, escribe la URL del repositorio primero.');
+      return;
+    }
 
-    const result = await apiFetch(`/servers/${serverId}/startup`, {
-      method: 'PUT',
-      body: JSON.stringify({ repo_url: repoUrl, node_version: nodeVersion })
-    });
+    try {
+      const result = await apiFetch(`/servers/${serverId}/startup`, {
+        method: 'PUT',
+        body: JSON.stringify({ repo_url: repoUrl, node_version: nodeVersion })
+      });
 
-    if (result && result.ok) {
-      startupSuccess.textContent = 'Startup actualizado correctamente';
-      startupSuccess.style.display = 'block';
-      serverData.repo_url = repoUrl;
-      serverData.node_version = nodeVersion;
-      updateServerUI();
-    } else {
-      startupError.textContent = result?.data?.error || 'Error al actualizar startup';
-      startupError.style.display = 'block';
+      if (result && result.ok) {
+        alert('✅ ¡Startup actualizado correctamente!');
+        
+        // Actualizar UI de forma segura
+        const successEl = document.getElementById('startupSuccess');
+        if (successEl) {
+          successEl.textContent = 'Startup actualizado correctamente';
+          successEl.style.display = 'block';
+        }
+        if (serverData) {
+          serverData.repo_url = repoUrl;
+          serverData.node_version = nodeVersion;
+          updateServerUI();
+        }
+      } else {
+        const errorMsg = result?.data?.error || `Error del servidor (Status: ${result?.status})`;
+        alert('❌ Error al guardar: ' + errorMsg);
+        
+        const errorEl = document.getElementById('startupError');
+        if (errorEl) {
+          errorEl.textContent = errorMsg;
+          errorEl.style.display = 'block';
+        }
+      }
+    } catch (err) {
+      console.error('Error inesperado en setupStartupForm:', err);
+      alert('❌ Error de red inesperado: ' + err.message);
     }
   });
 };
 
 const setupReinstall = () => {
   const reinstallBtn = document.getElementById('reinstallBtn');
-  const reinstallError = document.getElementById('reinstallError');
-  const reinstallSuccess = document.getElementById('reinstallSuccess');
+  if (!reinstallBtn) return;
 
   reinstallBtn.addEventListener('click', async () => {
-    if (!serverData.repo_url) {
-      reinstallError.textContent = 'Primero configura la URL del repositorio en Startup';
-      reinstallError.style.display = 'block';
+    if (!serverData || !serverData.repo_url) {
+      alert('⚠️ Primero configura la URL del repositorio en la pestaña Startup');
       return;
     }
     if (!confirm('¿Estás seguro de reinstalar? Se eliminarán todos los archivos actuales.')) return;
 
-    reinstallError.style.display = 'none';
-    reinstallSuccess.style.display = 'none';
     reinstallBtn.disabled = true;
     reinstallBtn.textContent = 'Reinstalando...';
 
-    document.querySelector('[data-tab="console"]').click();
     const result = await apiFetch(`/servers/${serverId}/reinstall`, { method: 'POST' });
 
     if (result && result.ok) {
-      reinstallSuccess.textContent = 'Reinstalación iniciada. Revisa la consola.';
-      reinstallSuccess.style.display = 'block';
+      alert('✅ Reinstalación iniciada. Revisa la consola.');
+      document.querySelector('[data-tab="console"]')?.click();
     } else {
-      reinstallError.textContent = result?.data?.error || 'Error al reinstalar';
-      reinstallError.style.display = 'block';
+      alert('❌ Error al reinstalar: ' + (result?.data?.error || 'Desconocido'));
     }
+    
     reinstallBtn.disabled = false;
     reinstallBtn.textContent = '🔄 Reinstalar Servidor';
   });
@@ -239,67 +276,73 @@ const setupReinstall = () => {
 const setupDeleteModal = () => {
   const deleteBtn = document.getElementById('deleteBtn');
   const deleteModal = document.getElementById('deleteModal');
-  const closeDeleteModal = document.getElementById('closeDeleteModal');
-  const cancelDelete = document.getElementById('cancelDelete');
-  const confirmDelete = document.getElementById('confirmDelete');
-  const deleteError = document.getElementById('deleteError');
+  if (!deleteBtn || !deleteModal) return;
 
   deleteBtn.addEventListener('click', () => deleteModal.classList.add('active'));
-  closeDeleteModal.addEventListener('click', () => deleteModal.classList.remove('active'));
-  cancelDelete.addEventListener('click', () => deleteModal.classList.remove('active'));
-  deleteModal.addEventListener('click', (e) => { if (e.target === deleteModal) deleteModal.classList.remove('active'); });
+  
+  const closeBtn = document.getElementById('closeDeleteModal');
+  const cancelBtn = document.getElementById('cancelDelete');
+  const confirmBtn = document.getElementById('confirmDelete');
 
-  confirmDelete.addEventListener('click', async () => {
-    confirmDelete.disabled = true;
-    const result = await apiFetch(`/servers/${serverId}`, { method: 'DELETE' });
-    if (result && result.ok) {
-      showNotification('Servidor eliminado', 'success');
-      setTimeout(() => window.location.href = '/dashboard.html', 1000);
-    } else {
-      deleteError.textContent = result?.data?.error || 'Error al eliminar';
-      deleteError.style.display = 'block';
-      confirmDelete.disabled = false;
-    }
-  });
+  const closeModal = () => deleteModal.classList.remove('active');
+  if (closeBtn) closeBtn.addEventListener('click', closeModal);
+  if (cancelBtn) cancelBtn.addEventListener('click', closeModal);
+  deleteModal.addEventListener('click', (e) => { if (e.target === deleteModal) closeModal(); });
+
+  if (confirmBtn) {
+    confirmBtn.addEventListener('click', async () => {
+      confirmBtn.disabled = true;
+      const result = await apiFetch(`/servers/${serverId}`, { method: 'DELETE' });
+      if (result && result.ok) {
+        alert('✅ Servidor eliminado');
+        window.location.href = '/dashboard.html';
+      } else {
+        alert('❌ Error al eliminar: ' + (result?.data?.error || 'Desconocido'));
+        confirmBtn.disabled = false;
+      }
+    });
+  }
 };
 
 const setupRenewModal = () => {
   const renewBtn = document.getElementById('renewBtn');
   const renewModal = document.getElementById('renewModal');
-  const closeRenewModal = document.getElementById('closeRenewModal');
-  const cancelRenew = document.getElementById('cancelRenew');
-  const confirmRenew = document.getElementById('confirmRenew');
-  const renewError = document.getElementById('renewError');
-  const renewSuccess = document.getElementById('renewSuccess');
+  if (!renewBtn || !renewModal) return;
 
   renewBtn.addEventListener('click', async () => {
     renewModal.classList.add('active');
     const plansResult = await apiFetch('/servers/plans');
-    if (plansResult && plansResult.ok) {
+    if (plansResult && plansResult.ok && serverData) {
       const plan = plansResult.data.plans[serverData.plan];
-      document.getElementById('renewCost').textContent = plan.coins;
+      const costEl = document.getElementById('renewCost');
+      if (costEl) costEl.textContent = plan.coins;
     }
   });
 
-  closeRenewModal.addEventListener('click', () => renewModal.classList.remove('active'));
-  cancelRenew.addEventListener('click', () => renewModal.classList.remove('active'));
-  renewModal.addEventListener('click', (e) => { if (e.target === renewModal) renewModal.classList.remove('active'); });
+  const closeBtn = document.getElementById('closeRenewModal');
+  const cancelBtn = document.getElementById('cancelRenew');
+  const confirmBtn = document.getElementById('confirmRenew');
 
-  confirmRenew.addEventListener('click', async () => {
-    confirmRenew.disabled = true;
-    renewError.style.display = 'none';
-    renewSuccess.style.display = 'none';
-    const result = await apiFetch(`/servers/${serverId}/renew`, { method: 'POST' });
-    if (result && result.ok) {
-      renewSuccess.textContent = 'Servidor renovado exitosamente';
-      renewSuccess.style.display = 'block';
-      setTimeout(() => { renewModal.classList.remove('active'); loadServer(); initUserUI(); }, 1500);
-    } else {
-      renewError.textContent = result?.data?.error || 'Error al renovar';
-      renewError.style.display = 'block';
-    }
-    confirmRenew.disabled = false;
-  });
+  const closeModal = () => renewModal.classList.remove('active');
+  if (closeBtn) closeBtn.addEventListener('click', closeModal);
+  if (cancelBtn) cancelBtn.addEventListener('click', closeModal);
+  renewModal.addEventListener('click', (e) => { if (e.target === renewModal) closeModal(); });
+
+  if (confirmBtn) {
+    confirmBtn.addEventListener('click', async () => {
+      confirmBtn.disabled = true;
+      const result = await apiFetch(`/servers/${serverId}/renew`, { method: 'POST' });
+      if (result && result.ok) {
+        alert('✅ Servidor renovado exitosamente');
+        closeModal();
+        loadServer();
+        initUserUI();
+      } else {
+        alert('❌ Error al renovar: ' + (result?.data?.error || 'Desconocido'));
+        confirmBtn.disabled = false;
+      }
+    });
+  }
 };
 
-const capitalizeFirst = (str) => str.charAt(0).toUpperCase() + str.slice(1);
+const capitalizeFirst = (str) => str ? str.charAt(0).toUpperCase() + str.slice(1) : '';
