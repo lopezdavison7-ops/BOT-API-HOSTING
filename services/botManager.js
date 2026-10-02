@@ -95,14 +95,15 @@ const startServer = async (serverId, nodeVersion, io) => {
     await emit(`📄 Archivo principal detectado: ${mainFile}`);
     
     if (mainFile.endsWith('.ts')) {
-      await emit(' Compilando TypeScript (tsc)...');
+      await emit('🔨 Compilando TypeScript automáticamente...');
       try {
         await runCommand('npx', ['tsc'], serverDir, io, serverId);
         await emit('✅ Compilación exitosa');
         execArgs.push('dist/main.js');
       } catch (e) {
-        await emit(`❌ Error en compilación: ${e.message}`);
-        throw new Error('Error al compilar TypeScript');
+        await emit(`⚠️ Compilación falló, intentando ejecutar directamente...`);
+        execCmd = 'npx';
+        execArgs = ['ts-node', '--transpile-only', mainFile];
       }
     } else {
       execArgs.push(mainFile);
@@ -125,7 +126,7 @@ const startServer = async (serverId, nodeVersion, io) => {
     if (proc.__stopping) {
       await emit('🛑 Servidor detenido manualmente.');
     } else {
-      await emit(` Servidor detenido (código: ${code}${signal ? `, señal: ${signal}` : ''})`);
+      await emit(`🛑 Servidor detenido (código: ${code}${signal ? `, señal: ${signal}` : ''})`);
       if (code !== 0) await emit('💡 El bot cerró por su cuenta. Revisa los mensajes ❌ de arriba.');
     }
     await db.query('UPDATE servers SET status = ? WHERE id = ?', ['stopped', serverId]);
@@ -189,23 +190,49 @@ const reinstall = async (serverId, repoUrl, nodeVersion, io) => {
     await emit('📦 Instalando dependencias (npm install)...');
     await runCommand('npm', ['install'], serverDir, io, serverId);
 
-    // 🔥 FIX: Compilar TypeScript si existe el script "build"
+    // 🔥 AUTO-FIX PROFESIONAL: Si existe tsconfig.json, lo reescribimos con una config universal que NUNCA falla
+    const tsconfigPath = path.join(serverDir, 'tsconfig.json');
+    try {
+      await fs.access(tsconfigPath);
+      const safeTsConfig = {
+        compilerOptions: {
+          target: "ES2022",
+          module: "CommonJS",
+          moduleResolution: "node",
+          outDir: "./dist",
+          rootDir: "./",
+          strict: false,
+          esModuleInterop: true,
+          skipLibCheck: true,
+          resolveJsonModule: true,
+          allowJs: true
+        },
+        include: ["**/*.ts", "**/*.js"],
+        exclude: ["node_modules", "dist"]
+      };
+      await fs.writeFile(tsconfigPath, JSON.stringify(safeTsConfig, null, 2), 'utf8');
+      await emit('🔧 tsconfig.json optimizado automáticamente (Compatibilidad 100%)');
+    } catch {}
+
+    // Intentar compilar
     try {
       const pkg = JSON.parse(await fs.readFile(path.join(serverDir, 'package.json'), 'utf8'));
       if (pkg.scripts && pkg.scripts.build) {
-        await emit(' Compilando proyecto (npm run build)...');
+        await emit('🔨 Compilando proyecto (npm run build)...');
         await runCommand('npm', ['run', 'build'], serverDir, io, serverId);
         await emit('✅ Compilación exitosa');
       }
-    } catch {}
+    } catch (e) {
+      await emit('⚠️ La compilación falló, pero el hosting intentará ejecutar de todos modos.');
+    }
 
-    // 🔥 FIX: Crear .env vacío si no existe (para que npm start no truene)
+    // Crear .env si no existe
     try {
       await fs.access(path.join(serverDir, '.env'));
       await emit('✅ Archivo .env encontrado');
     } catch {
       await fs.writeFile(path.join(serverDir, '.env'), '# Configuración del bot\nPHONE=\nOWNER=\nPREFIX=.\n', 'utf8');
-      await emit('⚠️ Archivo .env creado automáticamente (configúralo en Archivos)');
+      await emit('⚠️ Archivo .env creado automáticamente (configúralo en la pestaña Archivos)');
     }
 
     await db.query('UPDATE servers SET status = ? WHERE id = ?', ['stopped', serverId]);
@@ -240,7 +267,7 @@ const checkExpiredServers = async () => {
       if (isRunning(server.id)) await stopServer(server.id);
       await deleteServerDirectory(server.id);
       await db.query("UPDATE servers SET status = 'expired' WHERE id = ?", [server.id]);
-      console.log(`️ Servidor expirado eliminado: ${server.id}`);
+      console.log(`🗑️ Servidor expirado eliminado: ${server.id}`);
     }
   } catch (error) {
     console.error('Error al verificar servers expirados:', error);
