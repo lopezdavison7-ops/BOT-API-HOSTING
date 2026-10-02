@@ -1,4 +1,3 @@
-
 const { spawn } = require('child_process');
 const path = require('path');
 const fs = require('fs').promises;
@@ -54,26 +53,6 @@ const deleteServerDirectory = async (serverId) => {
 
 const isRunning = (serverId) => runningProcesses.has(serverId);
 
-const detectMainFile = async (serverDir) => {
-  try {
-    const pkg = JSON.parse(await fs.readFile(path.join(serverDir, 'package.json'), 'utf8'));
-    if (pkg.main && typeof pkg.main === 'string') {
-      try {
-        await fs.access(path.join(serverDir, pkg.main));
-        return pkg.main;
-      } catch {}
-    }
-  } catch {}
-  const candidates = ['index.js', 'main.js', 'app.js', 'bot.js', 'server.js', 'src/index.js', 'src/main.js', 'index.ts', 'main.ts', 'bot.ts'];
-  for (const candidate of candidates) {
-    try {
-      await fs.access(path.join(serverDir, candidate));
-      return candidate;
-    } catch {}
-  }
-  return 'index.js';
-};
-
 const startServer = async (serverId, nodeVersion, io) => {
   if (isRunning(serverId)) throw new Error('El servidor ya está corriendo');
   const serverDir = path.join(BOTS_DIR, serverId);
@@ -93,17 +72,10 @@ const startServer = async (serverId, nodeVersion, io) => {
     throw new Error('package.json no encontrado');
   }
 
-  // 🔥 LÓGICA INTELIGENTE: Verificar si existe el script "start"
   let hasStartScript = false;
-  let pkgMain = 'index.js';
   try {
     const pkg = JSON.parse(await fs.readFile(path.join(serverDir, 'package.json'), 'utf8'));
-    if (pkg.scripts && pkg.scripts.start) {
-      hasStartScript = true;
-    }
-    if (pkg.main) {
-      pkgMain = pkg.main;
-    }
+    if (pkg.scripts && pkg.scripts.start) hasStartScript = true;
   } catch {}
 
   let execCmd = 'node';
@@ -114,17 +86,20 @@ const startServer = async (serverId, nodeVersion, io) => {
     execArgs = ['start'];
     await emit('🚀 Iniciando servidor con "npm start"...');
   } else {
-    const mainFile = await detectMainFile(serverDir);
+    const candidates = ['index.js', 'main.js', 'app.js', 'bot.js', 'server.js', 'src/index.js', 'src/main.js', 'index.ts', 'main.ts', 'bot.ts'];
+    let mainFile = 'index.js';
+    for (const candidate of candidates) {
+      try { await fs.access(path.join(serverDir, candidate)); mainFile = candidate; break; } catch {}
+    }
     await emit(`🚀 Iniciando servidor (Node ${nodeVersion || '20'})...`);
     await emit(`📄 Archivo principal detectado: ${mainFile}`);
     
     if (mainFile.endsWith('.ts')) {
-      await emit('🔧 Compilando TypeScript (tsc)...');
+      await emit(' Compilando TypeScript (tsc)...');
       try {
         await runCommand('npx', ['tsc'], serverDir, io, serverId);
         await emit('✅ Compilación exitosa');
-        // Usar el main definido en package.json o dist/main.js por defecto
-        execArgs.push(pkgMain || 'dist/main.js');
+        execArgs.push('dist/main.js');
       } catch (e) {
         await emit(`❌ Error en compilación: ${e.message}`);
         throw new Error('Error al compilar TypeScript');
@@ -150,7 +125,7 @@ const startServer = async (serverId, nodeVersion, io) => {
     if (proc.__stopping) {
       await emit('🛑 Servidor detenido manualmente.');
     } else {
-      await emit(`🛑 Servidor detenido (código: ${code}${signal ? `, señal: ${signal}` : ''})`);
+      await emit(` Servidor detenido (código: ${code}${signal ? `, señal: ${signal}` : ''})`);
       if (code !== 0) await emit('💡 El bot cerró por su cuenta. Revisa los mensajes ❌ de arriba.');
     }
     await db.query('UPDATE servers SET status = ? WHERE id = ?', ['stopped', serverId]);
@@ -212,7 +187,26 @@ const reinstall = async (serverId, repoUrl, nodeVersion, io) => {
     await runCommand('git', ['clone', '--depth', '1', repoUrl, '.'], serverDir, io, serverId);
 
     await emit('📦 Instalando dependencias (npm install)...');
-    await runCommand('npm', ['install', '--production'], serverDir, io, serverId);
+    await runCommand('npm', ['install'], serverDir, io, serverId);
+
+    // 🔥 FIX: Compilar TypeScript si existe el script "build"
+    try {
+      const pkg = JSON.parse(await fs.readFile(path.join(serverDir, 'package.json'), 'utf8'));
+      if (pkg.scripts && pkg.scripts.build) {
+        await emit(' Compilando proyecto (npm run build)...');
+        await runCommand('npm', ['run', 'build'], serverDir, io, serverId);
+        await emit('✅ Compilación exitosa');
+      }
+    } catch {}
+
+    // 🔥 FIX: Crear .env vacío si no existe (para que npm start no truene)
+    try {
+      await fs.access(path.join(serverDir, '.env'));
+      await emit('✅ Archivo .env encontrado');
+    } catch {
+      await fs.writeFile(path.join(serverDir, '.env'), '# Configuración del bot\nPHONE=\nOWNER=\nPREFIX=.\n', 'utf8');
+      await emit('⚠️ Archivo .env creado automáticamente (configúralo en Archivos)');
+    }
 
     await db.query('UPDATE servers SET status = ? WHERE id = ?', ['stopped', serverId]);
     await emit('✅ Reinstalación completada. Puedes iniciar tu servidor.');
@@ -246,7 +240,7 @@ const checkExpiredServers = async () => {
       if (isRunning(server.id)) await stopServer(server.id);
       await deleteServerDirectory(server.id);
       await db.query("UPDATE servers SET status = 'expired' WHERE id = ?", [server.id]);
-      console.log(`🗑️ Servidor expirado eliminado: ${server.id}`);
+      console.log(`️ Servidor expirado eliminado: ${server.id}`);
     }
   } catch (error) {
     console.error('Error al verificar servers expirados:', error);
